@@ -58,9 +58,10 @@ async def cmd_app(message: Message) -> None:
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     await message.answer(
-        "Я Adeline Kalen из NULLXES — цифровая сотрудница "
-        "(Head of the Interworld Department).\n\n"
-        "NULLXES создаёт цифровых сотрудников для компаний и персональных цифровых друзей.\n\n"
+        "Я Аделина Кален — цифровой сотрудник NULLXES "
+        "(Enterprise AI Sales Executive).\n\n"
+        "Помогаю познакомиться с платформой NULLXES Digital Employees, "
+        "сценариями внедрения и пилотными проектами.\n\n"
         "• Текст / голос / видео в Mini App\n"
         "• /start или /app — актуальная кнопка Mini App\n"
         "• /voice on|off — дублировать ответы голосом\n"

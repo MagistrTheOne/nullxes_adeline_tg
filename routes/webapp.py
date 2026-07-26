@@ -9,6 +9,7 @@ import aiohttp
 from aiohttp import web
 
 from config import settings
+from prompts.adelina import FIRST_GREETING, RETURNING_GREETING
 from services.llm import brain
 from services.tg_auth import is_user_allowed, user_id_from_init_data, validate_init_data
 from services.user_state import user_states
@@ -44,12 +45,21 @@ async def create_session_token(request: web.Request) -> web.Response:
         user_states.mark_miniapp_opened(int(user_id))
         user_states.patch(int(user_id), preferred_channel="video")
 
-    # Stateful Lab persona (CUSTOMER_CLIENT / LLM disabled). Greeting via our brain + talk().
-    # Override Lab's short maxSessionLengthSeconds (e.g. 39s) — capped by Anam plan.
+    # CUSTOMER_CLIENT persona: Anam = face/voice/STT; NULLXES OpenAI = brain.
+    # languageCode=ru for STT; directorNotes for Cara-4 performance.
+    intro_shown = False
+    if user_id:
+        intro_shown = bool(user_states.get(int(user_id)).get("intro_shown"))
+
     persona_config: dict = {
         "personaId": settings.anam_persona_id,
         "maxSessionLengthSeconds": settings.anam_max_session_seconds,
         "skipGreeting": True,
+        "languageCode": "ru",
+        "directorNotes": {
+            "expressivity": 0.5,
+            "customStylePrompt": "спокойная",
+        },
     }
     payload = {"personaConfig": persona_config}
     headers = {
@@ -71,6 +81,9 @@ async def create_session_token(request: web.Request) -> web.Response:
                         {"error": "anam_session_failed", "details": body},
                         status=502,
                     )
+                greeting = RETURNING_GREETING if intro_shown else FIRST_GREETING
+                if user_id and not intro_shown:
+                    user_states.mark_intro_done(int(user_id))
                 return web.json_response(
                     {
                         "sessionToken": body.get("sessionToken")
@@ -79,7 +92,10 @@ async def create_session_token(request: web.Request) -> web.Response:
                         "avatarId": settings.anam_avatar_id,
                         "userId": user_id,
                         "name": "Adeline Kalen",
-                        "role": "Adeline Kalen из NULLXES",
+                        "role": "Аделина Кален · NULLXES",
+                        "greeting": greeting,
+                        "speakGreeting": True,
+                        "languageCode": "ru",
                     }
                 )
     except Exception as exc:

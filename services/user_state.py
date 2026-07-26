@@ -193,16 +193,16 @@ user_states = UserStateStore()
 
 
 def greeting_for(user_id: int, display_name: str) -> str:
-    """Short /start only — no long pitch. Full intro happens once in chat via LLM."""
+    """Short /start only — full First Greeting is spoken in Live / first chat."""
     state = user_states.touch_start(user_id, display_name=display_name)
     name = display_name or "друг"
     if state.get("intro_shown") or int(state.get("start_count") or 0) > 1:
         return (
             f"Снова рада вас видеть, {name}. На связи — чем займёмся?\n"
-            f"/help · /voice on|off"
+            f"/help · /voice on|off · /app"
         )
     return (
-        f"Привет, {name}. Я Adeline Kalen из NULLXES.\n"
-        f"Напиши, чем помочь — или открой Mini App.\n"
-        f"/help · /voice on|off"
+        f"Здравствуйте, {name}! Я Аделина — цифровой сотрудник NULLXES.\n"
+        f"Откройте Mini App или напишите, чем помочь.\n"
+        f"/help · /voice on|off · /app"
     )

@@ -51,7 +51,15 @@ export function fetchPersona(): Promise<PersonaCard> {
   return request<PersonaCard>("/api/persona");
 }
 
-export function createSessionToken(): Promise<{ sessionToken: string }> {
+export type SessionTokenResponse = {
+  sessionToken: string;
+  greeting?: string;
+  speakGreeting?: boolean;
+  name?: string;
+  role?: string;
+};
+
+export function createSessionToken(): Promise<SessionTokenResponse> {
   return request("/api/session-token", { method: "POST" });
 }
 

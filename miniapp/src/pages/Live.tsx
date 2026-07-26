@@ -72,6 +72,8 @@ export function Live({ onClose }: Props) {
   const turnRef = useRef<Turn>("listening");
   const micMutedRef = useRef(false);
   const userBuf = useRef("");
+  /** Dedup for MESSAGE_HISTORY_UPDATED (custom LLM path). */
+  const lastUserMsgIdRef = useRef<string>("");
   const showCaptionsRef = useRef(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -181,6 +183,7 @@ export function Live({ onClose }: Props) {
     micMutedRef.current = false;
     setStatus("");
     userBuf.current = "";
+    lastUserMsgIdRef.current = "";
     intentionalStopRef.current = false;
   }, [clearTimers, setPhaseSafe, setTurnSafe]);
 
@@ -206,6 +209,27 @@ export function Live({ onClose }: Props) {
     return () => window.clearInterval(id);
   }, [phase]);
 
+  async function speakAsPersona(text: string) {
+    const client = clientRef.current;
+    if (!client || !text.trim()) return;
+    setTurnSafe("speaking");
+    setStatus("Отвечает…");
+    if (showCaptionsRef.current) setCaption(text);
+    // Anam custom-LLM path: TalkMessageStream → TTS + lipsync
+    try {
+      const talkStream = client.createTalkMessageStream();
+      if (talkStream.isActive()) {
+        await talkStream.streamMessageChunk(text, true);
+      } else {
+        await client.talk(text);
+      }
+    } catch {
+      await client.talk(text);
+    }
+    setStatus("Слушает…");
+    setTurnSafe(micMutedRef.current ? "muted" : "listening");
+  }
+
   async function handleUserSpeech(text: string) {
     if (busyRef.current || !clientRef.current) return;
     const trimmed = text.trim();
@@ -219,12 +243,7 @@ export function Live({ onClose }: Props) {
     try {
       const { reply } = await chatWithBrain(trimmed);
       if (!clientRef.current) return;
-      if (showCaptionsRef.current) setCaption(reply);
-      setTurnSafe("speaking");
-      setStatus("Отвечает…");
-      await clientRef.current.talk(reply);
-      setStatus("Live session · Secure connection");
-      setTurnSafe(micMutedRef.current ? "muted" : "listening");
+      await speakAsPersona(reply);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
@@ -247,6 +266,7 @@ export function Live({ onClose }: Props) {
     setSeconds(0);
     setCaption("");
     userBuf.current = "";
+    lastUserMsgIdRef.current = "";
 
     try {
       const unlock = audioRef.current;
@@ -256,15 +276,35 @@ export function Live({ onClose }: Props) {
         unlock.pause();
       }
 
-      const { sessionToken } = await createSessionToken();
+      const session = await createSessionToken();
+      const { sessionToken } = session;
       if (!sessionToken) throw new Error("empty session token");
       if (!startingRef.current) return;
 
       const client = createAnamClient(sessionToken);
       clientRef.current = client;
+      let greetingSpoken = false;
+
+      const speakGreetingOnce = () => {
+        if (greetingSpoken || !session.speakGreeting || !session.greeting) return;
+        if (!clientRef.current) return;
+        greetingSpoken = true;
+        void (async () => {
+          // Wait a beat so video/audio pipes are ready.
+          await new Promise((r) => window.setTimeout(r, 400));
+          if (!clientRef.current || intentionalStopRef.current) return;
+          busyRef.current = true;
+          try {
+            await speakAsPersona(session.greeting!);
+          } finally {
+            busyRef.current = false;
+          }
+        })();
+      };
 
       client.addListener(AnamEvent.SESSION_READY, () => {
         setStatus("Session ready…");
+        armMic();
       });
       client.addListener(AnamEvent.CONNECTION_ESTABLISHED, () => {
         setStatus("Secure link…");
@@ -287,12 +327,16 @@ export function Live({ onClose }: Props) {
       });
       client.addListener(AnamEvent.VIDEO_STREAM_STARTED, () => {
         ensureVideoMutedPlaying();
-        const id = window.setTimeout(markLive, LIVE_FALLBACK_MS);
+        const id = window.setTimeout(() => {
+          markLive();
+          speakGreetingOnce();
+        }, LIVE_FALLBACK_MS);
         timersRef.current.push(id);
       });
       client.addListener(AnamEvent.VIDEO_PLAY_STARTED, () => {
         ensureVideoMutedPlaying();
         markLive();
+        speakGreetingOnce();
       });
       client.addListener(AnamEvent.AUDIO_STREAM_STARTED, (stream) => {
         const audio = audioRef.current;
@@ -309,8 +353,22 @@ export function Live({ onClose }: Props) {
       });
       client.addListener(AnamEvent.USER_SPEECH_ENDED, () => {
         if (micMutedRef.current || busyRef.current) return;
-        // Transcript may still arrive via MESSAGE_STREAM; show thinking hint early.
         setStatus("Обрабатываю речь…");
+      });
+      // Doc path for CUSTOMER_CLIENT_V1: respond only when last turn is user.
+      client.addListener(AnamEvent.MESSAGE_HISTORY_UPDATED, (messages) => {
+        if (micMutedRef.current || busyRef.current) return;
+        const list = Array.isArray(messages) ? messages : [];
+        if (list.length === 0) return;
+        const last = list[list.length - 1];
+        if (String(last?.role || "").toLowerCase() !== "user") return;
+        const id = String(last.id || "");
+        const text = String(last.content || "").trim();
+        if (!text) return;
+        if (id && id === lastUserMsgIdRef.current) return;
+        if (id) lastUserMsgIdRef.current = id;
+        else lastUserMsgIdRef.current = text;
+        void handleUserSpeech(text);
       });
       client.addListener(AnamEvent.CONNECTION_CLOSED, (reason, details) => {
         clientRef.current = null;
@@ -349,6 +407,7 @@ export function Live({ onClose }: Props) {
         }
 
         if (role === "user") {
+          // Captions only — brain turns come from MESSAGE_HISTORY_UPDATED (Anam custom-LLM docs).
           if (!micMutedRef.current && !busyRef.current) {
             setTurnSafe("listening");
           }
@@ -357,9 +416,7 @@ export function Live({ onClose }: Props) {
             setCaption(userBuf.current.slice(-280));
           }
           if (event.endOfSpeech) {
-            const text = userBuf.current.trim();
             userBuf.current = "";
-            if (text) void handleUserSpeech(text);
           }
         }
       });
