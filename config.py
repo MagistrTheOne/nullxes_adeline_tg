@@ -20,6 +20,8 @@ class Settings:
     anam_voice_id: str
     allowed_user_ids: frozenset[int]
     anam_reply_timeout: float = 45.0
+    # Live stream cap (Anam). Free plan max ≈ 180s; Lab persona may ship a lower default (e.g. 39).
+    anam_max_session_seconds: int = 180
     webapp_host: str = "0.0.0.0"
     webapp_port: int = 8080
     webapp_public_url: str = ""
@@ -64,6 +66,12 @@ def load_settings() -> Settings:
             "ALLOWED_USER_IDS пуст — whitelist отключён. Добавь свой Telegram id в .env."
         )
 
+    try:
+        max_session = int(os.getenv("ANAM_MAX_SESSION_SECONDS", "180").strip() or "180")
+    except ValueError:
+        max_session = 180
+    max_session = max(30, min(max_session, 3600))
+
     return Settings(
         bot_token=bot_token,
         openai_api_key=openai_api_key,
@@ -73,6 +81,7 @@ def load_settings() -> Settings:
         anam_avatar_id=anam_avatar_id,
         anam_voice_id=anam_voice_id,
         allowed_user_ids=allowed,
+        anam_max_session_seconds=max_session,
         webapp_public_url=os.getenv("WEBAPP_PUBLIC_URL", "").strip(),
         webapp_port=int(os.getenv("WEBAPP_PORT", "8080")),
         webapp_skip_auth=os.getenv("WEBAPP_SKIP_AUTH", "").strip().lower()

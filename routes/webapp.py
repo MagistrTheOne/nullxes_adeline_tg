@@ -45,7 +45,13 @@ async def create_session_token(request: web.Request) -> web.Response:
         user_states.patch(int(user_id), preferred_channel="video")
 
     # Stateful Lab persona (CUSTOMER_CLIENT / LLM disabled). Greeting via our brain + talk().
-    payload = {"personaConfig": {"personaId": settings.anam_persona_id}}
+    # Override Lab's short maxSessionLengthSeconds (e.g. 39s) — capped by Anam plan.
+    persona_config: dict = {
+        "personaId": settings.anam_persona_id,
+        "maxSessionLengthSeconds": settings.anam_max_session_seconds,
+        "skipGreeting": True,
+    }
+    payload = {"personaConfig": persona_config}
     headers = {
         "Authorization": f"Bearer {settings.anam_api_key}",
         "Content-Type": "application/json",

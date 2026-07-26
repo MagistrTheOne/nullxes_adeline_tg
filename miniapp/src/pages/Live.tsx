@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Captions,
-  Info,
   Loader2,
   Mic,
   MicOff,
@@ -18,6 +17,8 @@ type Props = {
 };
 
 type Phase = "idle" | "connecting" | "live" | "error";
+/** Mic / turn indicator while live */
+type Turn = "listening" | "thinking" | "speaking" | "muted";
 
 const PERSONA_NAME = "Adeline Kalen";
 const CONNECT_TIMEOUT_MS = 25_000;
@@ -32,6 +33,10 @@ function formatTimer(sec: number): string {
 }
 
 function friendlyCloseReason(reason: string, details?: string): string {
+  const detail = (details || "").toLowerCase();
+  if (detail.includes("max duration") || detail.includes("maxsession")) {
+    return "Сессия Anam закончилась по таймеру. Нажми Start session ещё раз.";
+  }
   const hint =
     reason === "CONNECTION_CLOSED_CODE_MICROPHONE_PERMISSION_DENIED"
       ? "Нужен доступ к микрофону в Telegram"
@@ -45,15 +50,17 @@ function friendlyCloseReason(reason: string, details?: string): string {
   return details ? `${hint} · ${details}` : hint;
 }
 
-function subtitleFor(phase: Phase, status: string, error: string): string {
-  if (phase === "connecting") return status || "Connecting…";
-  if (phase === "live") {
-    if (status.includes("Думаю")) return "Thinking…";
-    if (status.startsWith("Ошибка")) return status;
-    return "Live session · Secure connection";
+function turnLabel(turn: Turn): string {
+  switch (turn) {
+    case "listening":
+      return "Слушает";
+    case "thinking":
+      return "Думает";
+    case "speaking":
+      return "Отвечает";
+    case "muted":
+      return "Микрофон выкл";
   }
-  if (phase === "error") return error || status || "Session ended";
-  return "Standing by · connection check";
 }
 
 export function Live({ onClose }: Props) {
@@ -62,14 +69,18 @@ export function Live({ onClose }: Props) {
   const startingRef = useRef(false);
   const intentionalStopRef = useRef(false);
   const phaseRef = useRef<Phase>("idle");
+  const turnRef = useRef<Turn>("listening");
+  const micMutedRef = useRef(false);
   const userBuf = useRef("");
   const showCaptionsRef = useRef(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const timersRef = useRef<number[]>([]);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
   const [phase, setPhase] = useState<Phase>("idle");
+  const [turn, setTurn] = useState<Turn>("listening");
   const [status, setStatus] = useState("");
   const [caption, setCaption] = useState("");
   const [showCaptions, setShowCaptions] = useState(true);
@@ -77,11 +88,15 @@ export function Live({ onClose }: Props) {
   const [seconds, setSeconds] = useState(0);
   const [previewUrl, setPreviewUrl] = useState("");
   const [error, setError] = useState("");
-  const [showDetails, setShowDetails] = useState(false);
 
   const setPhaseSafe = useCallback((next: Phase) => {
     phaseRef.current = next;
     setPhase(next);
+  }, []);
+
+  const setTurnSafe = useCallback((next: Turn) => {
+    turnRef.current = next;
+    setTurn(next);
   }, []);
 
   const clearTimers = useCallback(() => {
@@ -89,17 +104,40 @@ export function Live({ onClose }: Props) {
     timersRef.current = [];
   }, []);
 
+  const ensureVideoMutedPlaying = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.volume = 0;
+    video.setAttribute("muted", "");
+    void video.play().catch(() => undefined);
+  }, []);
+
+  const armMic = useCallback(() => {
+    const client = clientRef.current;
+    if (!client) return;
+    try {
+      client.unmuteInputAudio();
+    } catch {
+      /* ignore */
+    }
+    micMutedRef.current = false;
+    setMicMuted(false);
+    if (phaseRef.current === "live" && turnRef.current !== "thinking" && turnRef.current !== "speaking") {
+      setTurnSafe("listening");
+    }
+  }, [setTurnSafe]);
+
   const markLive = useCallback(() => {
     if (phaseRef.current !== "connecting" || !clientRef.current) return;
-    const video = videoRef.current;
-    if (video) {
-      video.muted = false;
-      void video.play().catch(() => undefined);
-    }
+    ensureVideoMutedPlaying();
     clearTimers();
     setPhaseSafe("live");
-    setStatus("На линии");
-  }, [clearTimers, setPhaseSafe]);
+    setStatus("Live session · Secure connection");
+    armMic();
+    setTurnSafe("listening");
+  }, [armMic, clearTimers, ensureVideoMutedPlaying, setPhaseSafe, setTurnSafe]);
 
   useEffect(() => {
     showCaptionsRef.current = showCaptions;
@@ -129,14 +167,22 @@ export function Live({ onClose }: Props) {
       video.srcObject = null;
       video.muted = true;
     }
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.srcObject = null;
+    }
     setError("");
     setPhaseSafe("idle");
+    setTurnSafe("listening");
     setSeconds(0);
     setCaption("");
     setMicMuted(false);
+    micMutedRef.current = false;
     setStatus("");
+    userBuf.current = "";
     intentionalStopRef.current = false;
-  }, [clearTimers, setPhaseSafe]);
+  }, [clearTimers, setPhaseSafe, setTurnSafe]);
 
   useEffect(() => {
     if (mainButton.setParams.isAvailable()) {
@@ -162,17 +208,28 @@ export function Live({ onClose }: Props) {
 
   async function handleUserSpeech(text: string) {
     if (busyRef.current || !clientRef.current) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
     busyRef.current = true;
-    setStatus("Думаю…");
+    setTurnSafe("thinking");
+    setStatus("Думает…");
+    if (showCaptionsRef.current) setCaption(trimmed);
+
     try {
-      const { reply } = await chatWithBrain(text);
-      if (showCaptionsRef.current) setCaption(reply);
+      const { reply } = await chatWithBrain(trimmed);
       if (!clientRef.current) return;
+      if (showCaptionsRef.current) setCaption(reply);
+      setTurnSafe("speaking");
+      setStatus("Отвечает…");
       await clientRef.current.talk(reply);
-      setStatus("На линии");
+      setStatus("Live session · Secure connection");
+      setTurnSafe(micMutedRef.current ? "muted" : "listening");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
       setStatus(`Ошибка: ${msg}`);
+      setTurnSafe(micMutedRef.current ? "muted" : "listening");
     } finally {
       busyRef.current = false;
     }
@@ -185,11 +242,20 @@ export function Live({ onClose }: Props) {
     clearTimers();
     setError("");
     setPhaseSafe("connecting");
+    setTurnSafe("listening");
     setStatus("Connecting to NULLXES…");
     setSeconds(0);
     setCaption("");
+    userBuf.current = "";
 
     try {
+      const unlock = audioRef.current;
+      if (unlock) {
+        unlock.muted = false;
+        void unlock.play().catch(() => undefined);
+        unlock.pause();
+      }
+
       const { sessionToken } = await createSessionToken();
       if (!sessionToken) throw new Error("empty session token");
       if (!startingRef.current) return;
@@ -204,7 +270,11 @@ export function Live({ onClose }: Props) {
         setStatus("Secure link…");
       });
       client.addListener(AnamEvent.MIC_PERMISSION_PENDING, () => {
-        setStatus("Allow microphone in Telegram…");
+        setStatus("Разреши микрофон в Telegram…");
+      });
+      client.addListener(AnamEvent.MIC_PERMISSION_GRANTED, () => {
+        setStatus("Микрофон OK…");
+        armMic();
       });
       client.addListener(AnamEvent.MIC_PERMISSION_DENIED, (err) => {
         clearTimers();
@@ -212,17 +282,35 @@ export function Live({ onClose }: Props) {
         setPhaseSafe("error");
         setStatus("Нет доступа к микрофону");
       });
+      client.addListener(AnamEvent.INPUT_AUDIO_STREAM_STARTED, () => {
+        armMic();
+      });
       client.addListener(AnamEvent.VIDEO_STREAM_STARTED, () => {
-        const video = videoRef.current;
-        if (video) {
-          video.muted = true;
-          void video.play().then(markLive).catch(() => undefined);
-        }
+        ensureVideoMutedPlaying();
         const id = window.setTimeout(markLive, LIVE_FALLBACK_MS);
         timersRef.current.push(id);
       });
       client.addListener(AnamEvent.VIDEO_PLAY_STARTED, () => {
+        ensureVideoMutedPlaying();
         markLive();
+      });
+      client.addListener(AnamEvent.AUDIO_STREAM_STARTED, (stream) => {
+        const audio = audioRef.current;
+        if (!audio) return;
+        audio.srcObject = stream;
+        audio.muted = false;
+        audio.volume = 1;
+        void audio.play().catch(() => undefined);
+      });
+      client.addListener(AnamEvent.USER_SPEECH_STARTED, () => {
+        if (micMutedRef.current || busyRef.current) return;
+        setTurnSafe("listening");
+        setStatus("Слушает…");
+      });
+      client.addListener(AnamEvent.USER_SPEECH_ENDED, () => {
+        if (micMutedRef.current || busyRef.current) return;
+        // Transcript may still arrive via MESSAGE_STREAM; show thinking hint early.
+        setStatus("Обрабатываю речь…");
       });
       client.addListener(AnamEvent.CONNECTION_CLOSED, (reason, details) => {
         clientRef.current = null;
@@ -247,16 +335,27 @@ export function Live({ onClose }: Props) {
         const chunk = event.content || "";
 
         if (role === "persona" || role === "assistant") {
+          if (chunk) setTurnSafe("speaking");
           if (showCaptionsRef.current) {
             setCaption((prev) =>
               event.endOfSpeech ? chunk || prev : `${prev}${chunk}`.slice(-280),
             );
           }
+          if (event.endOfSpeech && !busyRef.current) {
+            setTurnSafe(micMutedRef.current ? "muted" : "listening");
+            setStatus("Live session · Secure connection");
+          }
           return;
         }
 
         if (role === "user") {
+          if (!micMutedRef.current && !busyRef.current) {
+            setTurnSafe("listening");
+          }
           userBuf.current += chunk;
+          if (showCaptionsRef.current && userBuf.current) {
+            setCaption(userBuf.current.slice(-280));
+          }
           if (event.endOfSpeech) {
             const text = userBuf.current.trim();
             userBuf.current = "";
@@ -265,9 +364,9 @@ export function Live({ onClose }: Props) {
         }
       });
 
+      ensureVideoMutedPlaying();
       const video = videoRef.current;
       if (video) {
-        video.muted = true;
         video.setAttribute("playsinline", "true");
         video.setAttribute("webkit-playsinline", "true");
       }
@@ -284,6 +383,8 @@ export function Live({ onClose }: Props) {
       timersRef.current.push(timeoutId);
 
       await client.streamToVideoElement("persona-video");
+      // Mic can be ready after stream starts — force unmute once more.
+      armMic();
     } catch (e) {
       clearTimers();
       const msg = e instanceof Error ? e.message : String(e);
@@ -309,12 +410,18 @@ export function Live({ onClose }: Props) {
   function toggleMic() {
     const client = clientRef.current;
     if (!client || phaseRef.current !== "live") return;
-    if (micMuted) {
+    if (micMutedRef.current) {
       client.unmuteInputAudio();
+      micMutedRef.current = false;
       setMicMuted(false);
+      setTurnSafe("listening");
+      setStatus("Live session · Secure connection");
     } else {
       client.muteInputAudio();
+      micMutedRef.current = true;
       setMicMuted(true);
+      setTurnSafe("muted");
+      setStatus("Микрофон выключен");
     }
   }
 
@@ -326,16 +433,27 @@ export function Live({ onClose }: Props) {
   const isLive = phase === "live";
   const isConnecting = phase === "connecting";
   const showPreview = phase === "idle" || phase === "error" || isConnecting;
-  const subtitle = subtitleFor(phase, status, error);
-  const pillLabel = isLive
-    ? status.includes("Думаю")
-      ? "Thinking"
-      : "Live"
-    : isConnecting
-      ? "Connecting"
+
+  const subtitle = isConnecting
+    ? status || "Connecting…"
+    : isLive
+      ? turnLabel(turn)
       : phase === "error"
-        ? "Error"
-        : "Idle";
+        ? error || status || "Session ended"
+        : "Standing by · connection check";
+
+  const pillTone =
+    turn === "speaking"
+      ? "bg-sky-400"
+      : turn === "thinking"
+        ? "bg-amber-400 animate-pulse"
+        : turn === "muted"
+          ? "bg-red-400"
+          : isLive
+            ? "bg-emerald-400"
+            : isConnecting
+              ? "bg-amber-400 animate-pulse"
+              : "bg-neutral-400";
 
   return (
     <div className="relative mx-auto flex h-[var(--tg-viewport-stable-height,100vh)] w-full max-w-md flex-col overflow-hidden bg-black">
@@ -345,8 +463,9 @@ export function Live({ onClose }: Props) {
         autoPlay
         playsInline
         muted
-        className="absolute inset-0 h-full w-full object-cover bg-black"
+        className="absolute inset-0 z-0 h-full w-full object-cover object-center bg-black"
       />
+      <audio ref={audioRef} autoPlay playsInline className="hidden" />
 
       {showPreview ? (
         <div className="absolute inset-0 z-[1]">
@@ -361,13 +480,16 @@ export function Live({ onClose }: Props) {
               AK
             </div>
           )}
-          <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/25 to-black/40" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-linear-to-t from-black/75 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-linear-to-b from-black/50 to-transparent" />
         </div>
       ) : (
-        <div className="pointer-events-none absolute inset-0 z-[1] bg-linear-to-t from-black/70 via-transparent to-black/35" />
+        <>
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-28 bg-linear-to-b from-black/55 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-2/5 bg-linear-to-t from-black/70 to-transparent" />
+        </>
       )}
 
-      {/* Top chrome */}
       <header className="relative z-10 flex shrink-0 items-start gap-2 px-3 pt-[max(10px,env(safe-area-inset-top))]">
         <button
           type="button"
@@ -383,7 +505,7 @@ export function Live({ onClose }: Props) {
             Talk · {PERSONA_NAME}
           </p>
           <p className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] text-neutral-300">
-            {isConnecting ? (
+            {isConnecting || turn === "thinking" ? (
               <Loader2 className="h-3 w-3 shrink-0 animate-spin text-gold" />
             ) : null}
             <span className="truncate">{subtitle}</span>
@@ -400,45 +522,16 @@ export function Live({ onClose }: Props) {
               End
             </button>
           ) : null}
-          <span className="hidden items-center gap-1 rounded-md border border-white/10 bg-black/40 px-1.5 py-1 text-[10px] text-neutral-200 xs:flex sm:flex">
-            <span
-              className={`h-1.5 w-1.5 rounded-full ${
-                isLive
-                  ? "bg-emerald-400"
-                  : isConnecting
-                    ? "bg-amber-400"
-                    : "bg-emerald-400/80"
-              }`}
-            />
-            {isLive ? "Online" : "Ready"}
-          </span>
           <span className="rounded-md border border-white/10 bg-black/40 px-1.5 py-1 font-mono text-[10px] tabular-nums text-neutral-200">
             {formatTimer(seconds)}
           </span>
-          <button
-            type="button"
-            onClick={() => setShowDetails((v) => !v)}
-            className="flex h-8 w-8 items-center justify-center rounded-md border border-white/10 bg-black/40 text-neutral-200 active:bg-black/60"
-            aria-label="Details"
-          >
-            <Info className="h-3.5 w-3.5" />
-          </button>
         </div>
       </header>
 
-      {showDetails ? (
-        <div className="relative z-10 mx-3 mt-2 rounded-xl border border-white/10 bg-black/70 px-3 py-2 text-[11px] leading-relaxed text-neutral-300 backdrop-blur-md">
-          Anam native stream · NULLXES brain · mic via Telegram WebView.
-          {error ? <p className="mt-1 text-red-400">{error}</p> : null}
-        </div>
-      ) : null}
-
-      {/* Brand watermark */}
       <p className="pointer-events-none absolute left-3 top-[4.5rem] z-[2] text-[9px] font-medium tracking-[0.18em] text-white/35">
         NULLXES
       </p>
 
-      {/* Captions */}
       {showCaptions && caption && isLive ? (
         <div className="relative z-10 mx-3 mt-auto mb-2 rounded-xl border border-white/10 bg-black/55 px-3 py-2 text-[13px] leading-snug text-white backdrop-blur-md">
           {caption}
@@ -447,16 +540,11 @@ export function Live({ onClose }: Props) {
         <div className="relative z-10 mt-auto" />
       )}
 
-      {/* Name pill */}
       <div className="relative z-10 mb-2 flex items-end justify-between px-3">
-        <div className="inline-flex max-w-[70%] items-center gap-2 rounded-full border border-white/10 bg-black/50 px-2.5 py-1.5 backdrop-blur-md">
-          <span
-            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-              isLive ? "bg-emerald-400" : isConnecting ? "bg-amber-400 animate-pulse" : "bg-neutral-400"
-            }`}
-          />
+        <div className="inline-flex max-w-[78%] items-center gap-2 rounded-full border border-white/10 bg-black/50 px-2.5 py-1.5 backdrop-blur-md">
+          <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${pillTone}`} />
           <span className="truncate text-[11px] text-neutral-100">
-            {pillLabel}
+            {isLive ? turnLabel(turn) : isConnecting ? "Connecting" : "Idle"}
             <span className="text-neutral-400"> · </span>
             {PERSONA_NAME}
           </span>
@@ -464,7 +552,6 @@ export function Live({ onClose }: Props) {
         <span className="text-[10px] text-white/30">HD</span>
       </div>
 
-      {/* Bottom toolbar */}
       <footer className="relative z-10 px-3 pb-[calc(12px+env(safe-area-inset-bottom))]">
         {phase === "error" && error ? (
           <p className="mb-2 text-center text-[12px] text-red-400">{error}</p>
@@ -480,7 +567,13 @@ export function Live({ onClose }: Props) {
                 ? "border-white/5 bg-white/5 text-neutral-500"
                 : micMuted
                   ? "border-red-500/40 bg-red-500/20 text-red-300"
-                  : "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
+                  : turn === "listening"
+                    ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-300"
+                    : turn === "thinking"
+                      ? "border-amber-500/40 bg-amber-500/20 text-amber-200"
+                      : turn === "speaking"
+                        ? "border-sky-500/40 bg-sky-500/20 text-sky-200"
+                        : "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
             }`}
             aria-label="Microphone"
           >
