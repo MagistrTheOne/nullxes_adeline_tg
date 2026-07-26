@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --background: #0b0d10;
+  --foreground: #f2f4f7;
+  --card: #12161c;
+  --card-foreground: #f2f4f7;
+  --primary: #c8a45a;
+  --primary-foreground: #0b0d10;
+  --secondary: #1a212c;
+  --secondary-foreground: #f2f4f7;
+  --muted: #1a212c;
+  --muted-foreground: #9aa3af;
+  --accent: #243041;
+  --accent-foreground: #f2f4f7;
+  --destructive: #e24b4b;
+  --border: #243041;
+  --input: #243041;
+  --ring: #c8a45a;
+  --radius: 0.9rem;
+  --tg-viewport-height: 100vh;
+  font-family: "Segoe UI", "IBM Plex Sans", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  border-color: var(--border);
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: var(--tg-viewport-stable-height, var(--tg-viewport-height, 100vh));
+  background: var(--background);
+  color: var(--foreground);
+}
+
+body {
+  background:
+    radial-gradient(120% 70% at 50% -15%, #1c2430 0%, transparent 55%),
+    var(--background);
+}

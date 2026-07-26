@@ -1,0 +1,8 @@
+aiogram>=3.30.0
+python-dotenv>=1.2.2
+anam>=0.6.0
+openai>=2.48.0
+pydub>=0.25.1
+aiohttp>=3.14.0
+tzdata>=2025.1
+# Mini App frontend: see miniapp/package.json (npm run build)

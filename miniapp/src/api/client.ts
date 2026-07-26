@@ -1,0 +1,64 @@
+import { retrieveRawInitData } from "@tma.js/sdk-react";
+
+export type PersonaCard = {
+  name: string;
+  role: string;
+  title: string;
+  status: string;
+  imageUrl: string;
+  blurb: string;
+  personaId: string;
+  avatarId: string;
+};
+
+export type ChatMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+function initDataHeader(): HeadersInit {
+  let initData = "";
+  try {
+    initData = retrieveRawInitData() || "";
+  } catch {
+    initData = "";
+  }
+  return initData ? { "X-Telegram-Init-Data": initData } : {};
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...initDataHeader(),
+      ...(init?.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export function fetchPersona(): Promise<PersonaCard> {
+  return request<PersonaCard>("/api/persona");
+}
+
+export function createSessionToken(): Promise<{ sessionToken: string }> {
+  return request("/api/session-token", { method: "POST" });
+}
+
+export function fetchHistory(): Promise<{ messages: ChatMessage[] }> {
+  return request("/api/history");
+}
+
+export function chatWithBrain(
+  text: string,
+): Promise<{ reply: string; history: ChatMessage[] }> {
+  return request("/api/chat", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}
