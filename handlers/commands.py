@@ -58,15 +58,15 @@ async def cmd_app(message: Message) -> None:
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
     await message.answer(
-        "Я Аделина Кален — цифровой сотрудник NULLXES "
-        "(Enterprise AI Sales Executive).\n\n"
-        "Помогаю познакомиться с платформой NULLXES Digital Employees, "
-        "сценариями внедрения и пилотными проектами.\n\n"
-        "• Текст / голос / видео в Mini App\n"
-        "• /start или /app — актуальная кнопка Mini App\n"
-        "• /voice on|off — дублировать ответы голосом\n"
-        "• /memory — что я о вас помню\n"
-        "Если Mini App пишет 503 — снова /start (туннель сменил URL)."
+        "Я Аделина Кален — цифровой сотрудник NULLXES.\n\n"
+        "Режимы в Mini App:\n"
+        "• Познакомиться — живой опыт, без продаж\n"
+        "• Для бизнеса — пилот и сценарии по запросу\n"
+        "• Свой цифровой сотрудник — платный слой (@MagistrTheOne)\n\n"
+        "• /start или /app — Mini App\n"
+        "• /voice on|off — голос в чате\n"
+        "• /memory — память\n"
+        "Если Mini App пишет 503 — снова /start."
     )
 
 
@@ -77,6 +77,7 @@ async def cmd_memory(message: Message) -> None:
     view = user_states.public_view(message.from_user.id)
     goals = view.get("goals") or []
     tasks = view.get("tasks_preview") or []
+    role = view.get("custom_role") or {}
     goals_s = ", ".join(goals) if goals else "—"
     tasks_s = (
         "\n".join(f"• [{t.get('status')}] {t.get('title')}" for t in tasks)
@@ -85,15 +86,31 @@ async def cmd_memory(message: Message) -> None:
     )
     await message.answer(
         "Память:\n"
+        f"Режим: {view.get('experience_mode') or 'showcase'}\n"
+        f"Кастом: {'открыт' if view.get('custom_unlocked') else 'закрыт'}\n"
+        f"Роль: {role.get('title') or '—'}\n"
         f"Фаза: {view.get('phase')}\n"
-        f"Этап продаж: {view.get('sales_stage') or '—'}\n"
+        f"Этап: {view.get('sales_stage') or '—'}\n"
         f"Категория: {view.get('user_category') or '—'}\n"
         f"Язык: {view.get('dialog_language') or '—'}\n"
-        f"Отрасль: {view.get('industry') or '—'}\n"
         f"Интро: {'да' if view.get('intro_shown') else 'нет'}\n"
-        f"Mini App: {'открывали' if view.get('miniapp_opened') else 'ещё нет'}\n"
         f"Цели: {goals_s}\n"
         f"Задачи:\n{tasks_s}"
+    )
+
+
+@router.message(Command("unlock_custom"))
+async def cmd_unlock_custom(message: Message) -> None:
+    """Manual unlock for paid custom-role layer (no billing in v1)."""
+    if not message.from_user:
+        return
+    uid = message.from_user.id
+    if settings.allowed_user_ids and uid not in settings.allowed_user_ids:
+        await message.answer("Недоступно.")
+        return
+    user_states.patch(uid, custom_unlocked=True)
+    await message.answer(
+        "Кастомизация роли разблокирована. Открой Mini App → «Свой цифровой сотрудник»."
     )
 
 

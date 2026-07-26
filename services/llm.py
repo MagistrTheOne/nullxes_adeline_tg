@@ -15,7 +15,7 @@ from pathlib import Path
 from openai import AsyncOpenAI  # pyright: ignore[reportMissingImports]
 
 from config import settings
-from prompts.adelina import SYSTEM_PROMPT, build_user_state_block
+from prompts.adelina import build_system_prompt, build_user_state_block
 from services.tools.registry import TOOL_DEFINITIONS, execute_tool
 from services.user_state import user_states
 
@@ -86,9 +86,10 @@ class AdelinaBrain:
         if len(history) > MAX_HISTORY:
             del history[:-MAX_HISTORY]
 
-        state_block = build_user_state_block(user_states.public_view(user_id))
+        view = user_states.public_view(user_id)
+        state_block = build_user_state_block(view)
         messages: list[dict] = [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": build_system_prompt(view)},
             {"role": "system", "content": state_block},
             *history,
         ]
@@ -138,10 +139,15 @@ class AdelinaBrain:
                     }
                     messages.append(tool_msg)
                     history.append(tool_msg)
-                # refresh state block after memory tools
+                # refresh system + state after memory tools (mode may change)
+                view = user_states.public_view(user_id)
+                messages[0] = {
+                    "role": "system",
+                    "content": build_system_prompt(view),
+                }
                 messages[1] = {
                     "role": "system",
-                    "content": build_user_state_block(user_states.public_view(user_id)),
+                    "content": build_user_state_block(view),
                 }
                 continue
 

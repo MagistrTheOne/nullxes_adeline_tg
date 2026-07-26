@@ -1,5 +1,15 @@
 import { retrieveRawInitData } from "@tma.js/sdk-react";
 
+export type ExperienceMode = "showcase" | "enterprise" | "custom";
+
+export type CustomRole = {
+  title?: string;
+  tone?: string;
+  goals?: string[];
+  greeting?: string;
+  boundaries?: string;
+};
+
 export type PersonaCard = {
   name: string;
   role: string;
@@ -9,6 +19,16 @@ export type PersonaCard = {
   blurb: string;
   personaId: string;
   avatarId: string;
+  experienceMode?: ExperienceMode;
+  customUnlocked?: boolean;
+  customRole?: CustomRole;
+};
+
+export type ExperienceState = {
+  experience_mode?: ExperienceMode;
+  custom_unlocked?: boolean;
+  custom_role?: CustomRole;
+  intro_shown?: boolean;
 };
 
 export type ChatMessage = {
@@ -41,14 +61,30 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         "Сервер/туннель недоступен. В чате бота нажми /start и открой Mini App новой кнопкой.",
       );
     }
-    const err = await res.json().catch(() => ({} as { error?: string }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+    const err = await res
+      .json()
+      .catch(() => ({} as { error?: string; message?: string }));
+    throw new Error(err.message || err.error || `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
 }
 
 export function fetchPersona(): Promise<PersonaCard> {
   return request<PersonaCard>("/api/persona");
+}
+
+export function fetchExperience(): Promise<ExperienceState> {
+  return request<ExperienceState>("/api/experience");
+}
+
+export function setExperienceMode(
+  mode: ExperienceMode,
+  customRole?: CustomRole,
+): Promise<{ ok: boolean; experience: ExperienceState }> {
+  return request("/api/experience", {
+    method: "POST",
+    body: JSON.stringify({ mode, customRole }),
+  });
 }
 
 export type SessionTokenResponse = {

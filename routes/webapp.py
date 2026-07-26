@@ -9,7 +9,7 @@ import aiohttp
 from aiohttp import web
 
 from config import settings
-from prompts.adelina import FIRST_GREETING, RETURNING_GREETING
+from prompts.adelina import greeting_for_mode, normalize_mode
 from services.llm import brain
 from services.tg_auth import is_user_allowed, user_id_from_init_data, validate_init_data
 from services.user_state import user_states
@@ -146,9 +146,22 @@ async def create_session_token(request: web.Request) -> web.Response:
                         continue
 
                     logger.info("Live session voice=%s", voice_id)
-                    greeting = RETURNING_GREETING if intro_shown else FIRST_GREETING
+                    view = (
+                        user_states.public_view(int(user_id))
+                        if user_id
+                        else {"experience_mode": "showcase", "intro_shown": False}
+                    )
+                    greeting = greeting_for_mode(
+                        view, returning=bool(intro_shown)
+                    )
                     if user_id and not intro_shown:
                         user_states.mark_intro_done(int(user_id))
+                    mode = normalize_mode(view)
+                    role_label = (
+                        "Enterprise · NULLXES"
+                        if mode == "enterprise"
+                        else "Цифровой сотрудник · NULLXES"
+                    )
                     return web.json_response(
                         {
                             "sessionToken": body.get("sessionToken")
@@ -158,7 +171,8 @@ async def create_session_token(request: web.Request) -> web.Response:
                             "voiceId": voice_id,
                             "userId": user_id,
                             "name": "Adeline Kalen",
-                            "role": "Аделина Кален · NULLXES",
+                            "role": role_label,
+                            "experienceMode": mode,
                             "greeting": greeting,
                             "speakGreeting": True,
                             "languageCode": "ru",
@@ -210,7 +224,11 @@ async def chat_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": str(exc)}, status=500)
 
 
-async def persona_card(_: web.Request) -> web.Response:
+async def persona_card(request: web.Request) -> web.Response:
+    user_id, err = _auth_user(request)
+    if err:
+        return err
+
     image_url = ""
     try:
         async with aiohttp.ClientSession() as session:
@@ -225,24 +243,82 @@ async def persona_card(_: web.Request) -> web.Response:
     except Exception as exc:
         logger.warning("persona image fetch failed: %s", exc)
 
+    view = user_states.public_view(int(user_id or 0)) if user_id is not None else {}
+    mode = normalize_mode(view)
+    title = {
+        "showcase": "Цифровой сотрудник NULLXES",
+        "enterprise": "Enterprise AI Sales Executive",
+        "custom": str((view.get("custom_role") or {}).get("title") or "Свой режим"),
+    }.get(mode, "Цифровой сотрудник NULLXES")
+
     return web.json_response(
         {
             "name": "Adeline Kalen",
             "role": "Adeline Kalen из NULLXES",
-            "title": "Digital executive",
+            "title": title,
             "status": "Online · ready",
             "personaId": settings.anam_persona_id,
             "avatarId": settings.anam_avatar_id,
             "imageUrl": image_url,
             "blurb": (
-                "Цифровая сотрудница NULLXES. Мы создаём цифровых сотрудников "
-                "для компаний и персональных цифровых друзей. "
-                "Пишите, звоните голосом или наберите по видео."
+                "Опыт цифрового сотрудника нового поколения NULLXES. "
+                "Познакомьтесь вживую или откройте бизнес-ветку — "
+                "продажи только если вам это нужно."
             ),
             "badges": {"avatar": "ready", "voice": "ready", "brain": "client"},
             "preset": "NULLXES",
+            "experienceMode": mode,
+            "customUnlocked": bool(view.get("custom_unlocked")),
+            "customRole": view.get("custom_role") or {},
         }
     )
+
+
+async def experience_handler(request: web.Request) -> web.Response:
+    """GET current mode; POST {mode, customRole?} to switch."""
+    user_id, err = _auth_user(request)
+    if err:
+        return err
+    uid = int(user_id or 0)
+
+    if request.method == "GET":
+        return web.json_response(user_states.public_view(uid))
+
+    try:
+        body = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid_json"}, status=400)
+
+    mode = str(body.get("mode") or body.get("experience_mode") or "").strip().lower()
+    if mode not in {"showcase", "enterprise", "custom"}:
+        return web.json_response({"error": "invalid_mode"}, status=400)
+
+    patch: dict = {"experience_mode": mode}
+    if mode == "enterprise":
+        patch["sales_stage"] = "qualification"
+    elif mode == "showcase":
+        patch["sales_stage"] = "overview"
+
+    custom_role = body.get("customRole") or body.get("custom_role")
+    if isinstance(custom_role, dict) and user_states.get(uid).get("custom_unlocked"):
+        patch["custom_role"] = custom_role
+        patch["experience_mode"] = "custom"
+
+    if mode == "custom" and not user_states.get(uid).get("custom_unlocked"):
+        return web.json_response(
+            {
+                "error": "custom_locked",
+                "message": (
+                    "Кастомизация роли — платный слой. "
+                    "Напишите основателю @MagistrTheOne"
+                ),
+                "experience": user_states.public_view(uid),
+            },
+            status=402,
+        )
+
+    user_states.patch(uid, **patch)
+    return web.json_response({"ok": True, "experience": user_states.public_view(uid)})
 
 
 async def spa_index(_: web.Request) -> web.FileResponse:
@@ -267,6 +343,8 @@ def create_web_app() -> web.Application:
     app.router.add_post("/api/session-token", create_session_token)
     app.router.add_get("/api/history", history_handler)
     app.router.add_post("/api/chat", chat_handler)
+    app.router.add_get("/api/experience", experience_handler)
+    app.router.add_post("/api/experience", experience_handler)
     app.router.add_get("/webapp/session-token", create_session_token)
     app.router.add_post("/webapp/session-token", create_session_token)
 

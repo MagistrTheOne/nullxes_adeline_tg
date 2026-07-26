@@ -1,4 +1,4 @@
-"""Per-user state machine + lightweight task board for Adeline."""
+"""Per-user state machine + experience modes + lightweight task board."""
 
 from __future__ import annotations
 
@@ -14,7 +14,15 @@ logger = logging.getLogger(__name__)
 USERS_DIR = Path(__file__).resolve().parent.parent / "data" / "users"
 USERS_DIR.mkdir(parents=True, exist_ok=True)
 
-# Sales FSM memory (phase stays coarse; sales_stage drives dialogue)
+DEFAULT_CUSTOM_ROLE: dict[str, Any] = {
+    "title": "",
+    "tone": "",
+    "goals": [],
+    "greeting": "",
+    "boundaries": "",
+}
+
+# Sales FSM memory + experience modes
 DEFAULT_STATE: dict[str, Any] = {
     "phase": "new",
     "intro_shown": False,
@@ -25,6 +33,9 @@ DEFAULT_STATE: dict[str, Any] = {
     "dialog_language": "",
     "user_category": "",
     "sales_stage": "start",
+    "experience_mode": "showcase",
+    "custom_unlocked": False,
+    "custom_role": {**DEFAULT_CUSTOM_ROLE},
     "industry": "",
     "company_size": "",
     "process_goal": "",
@@ -39,6 +50,8 @@ DEFAULT_STATE: dict[str, Any] = {
     "last_seen": "",
 }
 
+VALID_MODES = frozenset({"showcase", "enterprise", "custom"})
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -46,6 +59,27 @@ def _now() -> str:
 
 def _path(user_id: int) -> Path:
     return USERS_DIR / f"{user_id}.json"
+
+
+def _normalize_custom_role(raw: Any) -> dict[str, Any]:
+    base = {**DEFAULT_CUSTOM_ROLE}
+    if not isinstance(raw, dict):
+        return base
+    if "title" in raw:
+        base["title"] = str(raw.get("title") or "").strip()
+    if "tone" in raw:
+        base["tone"] = str(raw.get("tone") or "").strip()
+    if "greeting" in raw:
+        base["greeting"] = str(raw.get("greeting") or "").strip()
+    if "boundaries" in raw:
+        base["boundaries"] = str(raw.get("boundaries") or "").strip()
+    if "goals" in raw:
+        goals = raw.get("goals")
+        if isinstance(goals, list):
+            base["goals"] = [str(g).strip() for g in goals if str(g).strip()]
+        elif isinstance(goals, str) and goals.strip():
+            base["goals"] = [goals.strip()]
+    return base
 
 
 class UserStateStore:
@@ -61,16 +95,28 @@ class UserStateStore:
                 data = json.loads(path.read_text(encoding="utf-8"))
                 if isinstance(data, dict):
                     merged = {**DEFAULT_STATE, **data}
+                    merged["custom_role"] = _normalize_custom_role(
+                        merged.get("custom_role")
+                    )
+                    mode = str(merged.get("experience_mode") or "showcase").lower()
+                    merged["experience_mode"] = (
+                        mode if mode in VALID_MODES else "showcase"
+                    )
                     self._cache[user_id] = merged
                     return merged
             except Exception as exc:
                 logger.warning("user state load failed %s: %s", user_id, exc)
-        state = {**DEFAULT_STATE, "created_at": _now()}
+        state = {**DEFAULT_STATE, "created_at": _now(), "custom_role": {**DEFAULT_CUSTOM_ROLE}}
         self._cache[user_id] = state
         return state
 
     def save(self, user_id: int, state: dict[str, Any]) -> dict[str, Any]:
         state = {**DEFAULT_STATE, **state}
+        state["custom_role"] = _normalize_custom_role(state.get("custom_role"))
+        mode = str(state.get("experience_mode") or "showcase").lower()
+        state["experience_mode"] = mode if mode in VALID_MODES else "showcase"
+        if state["experience_mode"] == "custom" and not state.get("custom_unlocked"):
+            state["experience_mode"] = "showcase"
         state["updated_at"] = _now()
         state["last_seen"] = state["updated_at"]
         self._cache[user_id] = state
@@ -86,15 +132,29 @@ class UserStateStore:
     def patch(self, user_id: int, **fields: Any) -> dict[str, Any]:
         state = dict(self.get(user_id))
         for key, value in fields.items():
-            if key in DEFAULT_STATE or key in state:
+            if key == "custom_role" and isinstance(value, dict):
+                merged_role = _normalize_custom_role(state.get("custom_role"))
+                incoming = _normalize_custom_role(value)
+                for rk, rv in incoming.items():
+                    if rv or rk in value:
+                        merged_role[rk] = rv
+                state["custom_role"] = merged_role
+            elif key in DEFAULT_STATE or key in state:
                 state[key] = value
-        # derive phase
         if state.get("intro_shown") and state.get("phase") in {"new", "onboarding"}:
             state["phase"] = "active"
         elif not state.get("intro_shown") and state.get("phase") == "new":
             if state.get("start_count", 0) > 0 or state.get("message_count", 0) > 0:
                 state["phase"] = "onboarding"
         return self.save(user_id, state)
+
+    def set_experience_mode(self, user_id: int, mode: str) -> dict[str, Any]:
+        mode = (mode or "showcase").strip().lower()
+        if mode not in VALID_MODES:
+            mode = "showcase"
+        if mode == "custom" and not self.get(user_id).get("custom_unlocked"):
+            mode = "showcase"
+        return self.patch(user_id, experience_mode=mode)
 
     def touch_start(self, user_id: int, display_name: str = "") -> dict[str, Any]:
         state = dict(self.get(user_id))
@@ -114,7 +174,8 @@ class UserStateStore:
         state = self.get(user_id)
         stage = state.get("sales_stage") or "start"
         if stage in {"", "start", "greeting"}:
-            stage = "qualification"
+            mode = str(state.get("experience_mode") or "showcase")
+            stage = "qualification" if mode == "enterprise" else "overview"
         return self.patch(
             user_id,
             intro_shown=True,
@@ -140,6 +201,9 @@ class UserStateStore:
             "dialog_language": s.get("dialog_language") or "",
             "user_category": s.get("user_category") or "",
             "sales_stage": s.get("sales_stage") or "start",
+            "experience_mode": s.get("experience_mode") or "showcase",
+            "custom_unlocked": bool(s.get("custom_unlocked")),
+            "custom_role": s.get("custom_role") or {**DEFAULT_CUSTOM_ROLE},
             "industry": s.get("industry") or "",
             "company_size": s.get("company_size") or "",
             "process_goal": s.get("process_goal") or "",
@@ -212,16 +276,23 @@ user_states = UserStateStore()
 
 
 def greeting_for(user_id: int, display_name: str) -> str:
-    """Short /start only — FSM First Greeting runs in chat / Live."""
+    """Short /start — mode-aware, full greeting runs in chat / Live."""
+    from prompts.adelina import greeting_for_mode, normalize_mode
+
     state = user_states.touch_start(user_id, display_name=display_name)
     name = display_name or "коллега"
-    if state.get("intro_shown") or int(state.get("start_count") or 0) > 1:
+    mode = normalize_mode(state)
+    returning = bool(state.get("intro_shown") or int(state.get("start_count") or 0) > 1)
+    line = greeting_for_mode(state, returning=returning).split("\n")[0]
+    suffix = "/help · /voice on|off · /app"
+    if returning:
+        return f"{name}, {line}\n{suffix}"
+    if mode == "enterprise":
         return (
-            f"{name}, снова на связи по NULLXES. Чем продолжим?\n"
-            f"/help · /voice on|off · /app"
+            f"Здравствуйте, {name}. Аделина Кален · NULLXES · для бизнеса.\n"
+            f"Откройте Mini App или напишите задачу.\n{suffix}"
         )
     return (
-        f"Здравствуйте, {name}. Аделина Кален, Enterprise AI Sales Executive, NULLXES.\n"
-        f"Напишите задачу или откройте Mini App.\n"
-        f"/help · /voice on|off · /app"
+        f"Здравствуйте, {name}. Аделина Кален — цифровой сотрудник NULLXES.\n"
+        f"Познакомиться или для бизнеса — в Mini App.\n{suffix}"
     )

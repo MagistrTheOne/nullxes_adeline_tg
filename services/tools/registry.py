@@ -79,8 +79,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "update_user_memory",
             "description": (
-                "Обновить FSM-память продаж. После интро: intro_shown=true, "
-                "sales_stage=qualification|discovery|…, dialog_language, user_category."
+                "Обновить память. experience_mode: showcase|enterprise|custom. "
+                "После интро: intro_shown=true. При интересе к пилоту → enterprise."
             ),
             "parameters": {
                 "type": "object",
@@ -98,6 +98,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "dialog_language": {
                         "type": "string",
                         "enum": ["ru", "en"],
+                    },
+                    "experience_mode": {
+                        "type": "string",
+                        "enum": ["showcase", "enterprise", "custom"],
                     },
                     "user_category": {
                         "type": "string",
@@ -131,6 +135,17 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "company_size": {"type": "string"},
                     "process_goal": {"type": "string"},
                     "why_now": {"type": "string"},
+                    "custom_role_title": {
+                        "type": "string",
+                        "description": "Только если custom_unlocked=true",
+                    },
+                    "custom_role_tone": {"type": "string"},
+                    "custom_role_greeting": {"type": "string"},
+                    "custom_role_boundaries": {"type": "string"},
+                    "custom_role_goal": {
+                        "type": "string",
+                        "description": "Одна цель роли (добавляется в custom_role.goals)",
+                    },
                     "goals": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -243,6 +258,7 @@ async def execute_tool(
             "phase",
             "preferred_channel",
             "dialog_language",
+            "experience_mode",
             "user_category",
             "sales_stage",
             "industry",
@@ -261,6 +277,29 @@ async def execute_tool(
             if goal and goal not in goals:
                 goals.append(goal)
             patch["goals"] = goals
+        # Custom role patches only when unlocked
+        role_patch: dict[str, Any] = {}
+        if args.get("custom_role_title") is not None:
+            role_patch["title"] = str(args["custom_role_title"])
+        if args.get("custom_role_tone") is not None:
+            role_patch["tone"] = str(args["custom_role_tone"])
+        if args.get("custom_role_greeting") is not None:
+            role_patch["greeting"] = str(args["custom_role_greeting"])
+        if args.get("custom_role_boundaries") is not None:
+            role_patch["boundaries"] = str(args["custom_role_boundaries"])
+        if args.get("custom_role_goal"):
+            st = user_states.get(user_id)
+            goals = list((st.get("custom_role") or {}).get("goals") or [])
+            g = str(args["custom_role_goal"]).strip()
+            if g and g not in goals:
+                goals.append(g)
+            role_patch["goals"] = goals
+        if role_patch and user_states.get(user_id).get("custom_unlocked"):
+            patch["custom_role"] = role_patch
+        if patch.get("experience_mode") == "custom" and not user_states.get(
+            user_id
+        ).get("custom_unlocked"):
+            patch["experience_mode"] = "showcase"
         if patch:
             user_states.patch(user_id, **patch)
         result = user_states.public_view(user_id)
