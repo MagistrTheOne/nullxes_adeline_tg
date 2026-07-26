@@ -17,20 +17,35 @@ URL_RE = re.compile(r"https://[a-zA-Z0-9-]+\.lhr\.life")
 
 _public_url: str = ""
 _tunnel_proc: asyncio.subprocess.Process | None = None
+_url_event: asyncio.Event | None = None
 
 
 def get_public_url(fallback: str = "") -> str:
     return (_public_url or fallback or "").rstrip("/")
 
 
-def set_public_url(url: str) -> None:
+def set_public_url(url: str) -> bool:
+    """Set runtime URL. Returns True if value changed."""
     global _public_url
     url = (url or "").strip().rstrip("/")
     if not url:
-        return
+        return False
+    changed = url != _public_url
     _public_url = url
-    _write_env_webapp_url(url)
-    logger.info("WEBAPP_PUBLIC_URL -> %s", url)
+    if changed:
+        _write_env_webapp_url(url)
+        logger.info("WEBAPP_PUBLIC_URL -> %s", url)
+        if _url_event is not None:
+            _url_event.set()
+    return changed
+
+
+def clear_runtime_url() -> None:
+    """Forget stale runtime URL (keep .env as last-known hint only)."""
+    global _public_url
+    _public_url = ""
+    if _url_event is not None:
+        _url_event.clear()
 
 
 def _write_env_webapp_url(url: str) -> None:
@@ -60,9 +75,29 @@ def tunnel_enabled() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
-async def start_localhost_run_tunnel(port: int) -> None:
-    """Keep SSH reverse tunnel alive; update public URL when issued."""
-    global _tunnel_proc
+async def wait_for_public_url(timeout: float = 45.0) -> str:
+    """Block until tunnel publishes a URL (or timeout → empty)."""
+    global _url_event
+    if _public_url:
+        return _public_url
+    if _url_event is None:
+        _url_event = asyncio.Event()
+    try:
+        await asyncio.wait_for(_url_event.wait(), timeout=timeout)
+    except asyncio.TimeoutError:
+        return ""
+    return _public_url
+
+
+async def start_localhost_run_tunnel(
+    port: int,
+    on_url=None,
+) -> None:
+    """Keep SSH reverse tunnel alive; update public URL when issued.
+
+    on_url: optional async callable(url: str) — called only when URL changes.
+    """
+    global _tunnel_proc, _url_event
 
     if not tunnel_enabled():
         logger.info("START_TUNNEL=0 — туннель не поднимаю")
@@ -73,6 +108,10 @@ async def start_localhost_run_tunnel(port: int) -> None:
         logger.error("ssh не найден — поставь OpenSSH Client в Windows")
         return
 
+    if _url_event is None:
+        _url_event = asyncio.Event()
+    clear_runtime_url()
+
     backoff = 3
     while True:
         try:
@@ -82,9 +121,11 @@ async def start_localhost_run_tunnel(port: int) -> None:
                 "-o",
                 "StrictHostKeyChecking=accept-new",
                 "-o",
-                "ServerAliveInterval=30",
+                "TCPKeepAlive=yes",
                 "-o",
-                "ServerAliveCountMax=3",
+                "ServerAliveInterval=15",
+                "-o",
+                "ServerAliveCountMax=4",
                 "-o",
                 "ExitOnForwardFailure=yes",
                 "-R",
@@ -101,11 +142,20 @@ async def start_localhost_run_tunnel(port: int) -> None:
                 line = line_b.decode("utf-8", errors="replace").strip()
                 if not line:
                     continue
+                # Skip huge QR noise in logs
+                if line.count("\x1b[") > 3 or "█" in line:
+                    continue
                 logger.info("[tunnel] %s", line)
                 m = URL_RE.search(line)
                 if m:
-                    set_public_url(m.group(0))
+                    url = m.group(0)
+                    changed = set_public_url(url)
                     backoff = 3
+                    if changed and on_url is not None:
+                        try:
+                            await on_url(url)
+                        except Exception as exc:
+                            logger.warning("on_url callback failed: %s", exc)
             code = await _tunnel_proc.wait()
             logger.warning("localhost.run tunnel exited code=%s", code)
         except asyncio.CancelledError:
@@ -114,6 +164,7 @@ async def start_localhost_run_tunnel(port: int) -> None:
         except Exception as exc:
             logger.warning("tunnel error: %s", exc)
 
+        clear_runtime_url()
         logger.info("Переподключение туннеля через %ss…", backoff)
         await asyncio.sleep(backoff)
         backoff = min(backoff * 2, 60)

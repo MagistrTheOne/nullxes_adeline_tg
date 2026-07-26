@@ -21,6 +21,8 @@ type Props = {
 type Phase = "idle" | "connecting" | "live" | "error";
 
 const CONNECTING_STATUS = "Соединяю с Сотрудником NULLXES";
+const CONNECT_TIMEOUT_MS = 25_000;
+const LIVE_FALLBACK_MS = 2_000;
 
 function formatTimer(sec: number): string {
   const m = Math.floor(sec / 60)
@@ -30,13 +32,30 @@ function formatTimer(sec: number): string {
   return `${m}:${s}`;
 }
 
+function friendlyCloseReason(reason: string, details?: string): string {
+  const hint =
+    reason === "CONNECTION_CLOSED_CODE_MICROPHONE_PERMISSION_DENIED"
+      ? "Нужен доступ к микрофону в Telegram"
+      : reason === "CONNECTION_CLOSED_CODE_WEBRTC_FAILURE"
+        ? "WebRTC не поднялся — проверь VPN/сеть"
+        : reason === "CONNECTION_CLOSED_CODE_SIGNALLING_CLIENT_CONNECTION_FAILURE"
+          ? "Не достучались до Anam"
+          : reason === "CONNECTION_CLOSED_CODE_SERVER_CLOSED_CONNECTION"
+            ? "Anam закрыл сессию"
+            : "Стрим оборвался";
+  return details ? `${hint} · ${details}` : hint;
+}
+
 export function Live({ onClose }: Props) {
   const clientRef = useRef<LiveClient | null>(null);
   const busyRef = useRef(false);
   const startingRef = useRef(false);
+  const intentionalStopRef = useRef(false);
+  const phaseRef = useRef<Phase>("idle");
   const userBuf = useRef("");
   const showCaptionsRef = useRef(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const timersRef = useRef<number[]>([]);
 
   const [phase, setPhase] = useState<Phase>("idle");
   const [status, setStatus] = useState("Нажми, чтобы набрать Adeline Kalen");
@@ -46,6 +65,28 @@ export function Live({ onClose }: Props) {
   const [seconds, setSeconds] = useState(0);
   const [previewUrl, setPreviewUrl] = useState("");
   const [error, setError] = useState("");
+
+  const setPhaseSafe = useCallback((next: Phase) => {
+    phaseRef.current = next;
+    setPhase(next);
+  }, []);
+
+  const clearTimers = useCallback(() => {
+    for (const id of timersRef.current) window.clearTimeout(id);
+    timersRef.current = [];
+  }, []);
+
+  const markLive = useCallback(() => {
+    if (phaseRef.current !== "connecting" || !clientRef.current) return;
+    const video = videoRef.current;
+    if (video) {
+      video.muted = false;
+      void video.play().catch(() => undefined);
+    }
+    clearTimers();
+    setPhaseSafe("live");
+    setStatus("На линии · говори с Adeline");
+  }, [clearTimers, setPhaseSafe]);
 
   useEffect(() => {
     showCaptionsRef.current = showCaptions;
@@ -57,29 +98,10 @@ export function Live({ onClose }: Props) {
       .catch(() => undefined);
   }, []);
 
-  useEffect(() => {
-    if (mainButton.setParams.isAvailable()) {
-      mainButton.setParams({ isVisible: false });
-    }
-    if (backButton.show.isAvailable()) backButton.show();
-    const off = backButton.onClick(() => {
-      void stopSession().then(onClose);
-    });
-    return () => {
-      off();
-      if (backButton.hide.isAvailable()) backButton.hide();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (phase !== "live") return;
-    const id = window.setInterval(() => setSeconds((v) => v + 1), 1000);
-    return () => window.clearInterval(id);
-  }, [phase]);
-
   const stopSession = useCallback(async () => {
     startingRef.current = false;
+    intentionalStopRef.current = true;
+    clearTimers();
     const client = clientRef.current;
     clientRef.current = null;
     if (client) {
@@ -94,12 +116,40 @@ export function Live({ onClose }: Props) {
       video.srcObject = null;
       video.muted = true;
     }
-    setPhase("idle");
+    setError("");
+    setPhaseSafe("idle");
     setSeconds(0);
     setCaption("");
     setMicMuted(false);
     setStatus("Нажми, чтобы набрать Adeline Kalen");
+    intentionalStopRef.current = false;
+  }, [clearTimers, setPhaseSafe]);
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (mainButton.setParams.isAvailable()) {
+      mainButton.setParams({ isVisible: false });
+    }
+    if (backButton.show.isAvailable()) backButton.show();
+    const off = backButton.onClick(() => {
+      void stopSession().then(() => onCloseRef.current());
+    });
+    return () => {
+      off();
+      if (backButton.hide.isAvailable()) backButton.hide();
+      void stopSession();
+    };
+    // Mount/unmount only — stopSession is stable enough via refs inside.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (phase !== "live") return;
+    const id = window.setInterval(() => setSeconds((v) => v + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [phase]);
 
   async function handleUserSpeech(text: string) {
     if (busyRef.current || !clientRef.current) return;
@@ -108,6 +158,7 @@ export function Live({ onClose }: Props) {
     try {
       const { reply } = await chatWithBrain(text);
       if (showCaptionsRef.current) setCaption(reply);
+      if (!clientRef.current) return;
       await clientRef.current.talk(reply);
       setStatus("На линии · говори с Adeline");
     } catch (e) {
@@ -121,49 +172,65 @@ export function Live({ onClose }: Props) {
   async function startSession() {
     if (startingRef.current || clientRef.current) return;
     startingRef.current = true;
+    intentionalStopRef.current = false;
+    clearTimers();
     setError("");
-    setPhase("connecting");
+    setPhaseSafe("connecting");
     setStatus(CONNECTING_STATUS);
     setSeconds(0);
+    setCaption("");
 
     try {
       const { sessionToken } = await createSessionToken();
       if (!sessionToken) throw new Error("empty session token");
+      if (!startingRef.current) return;
 
-      setStatus(CONNECTING_STATUS);
       const client = createAnamClient(sessionToken);
       clientRef.current = client;
 
       client.addListener(AnamEvent.SESSION_READY, () => {
         setStatus(CONNECTING_STATUS);
       });
+      client.addListener(AnamEvent.CONNECTION_ESTABLISHED, () => {
+        setStatus(CONNECTING_STATUS);
+      });
       client.addListener(AnamEvent.MIC_PERMISSION_PENDING, () => {
-        setStatus("Нужен доступ к микрофону…");
+        setStatus("Разреши микрофон в Telegram…");
       });
       client.addListener(AnamEvent.MIC_PERMISSION_DENIED, (err) => {
+        clearTimers();
         setError(`Микрофон запрещён: ${err}`);
-        setPhase("error");
+        setPhaseSafe("error");
         setStatus("Нет доступа к микрофону");
       });
       client.addListener(AnamEvent.VIDEO_STREAM_STARTED, () => {
-        setStatus(CONNECTING_STATUS);
         const video = videoRef.current;
         if (video) {
+          // Keep muted until play starts — required for Telegram WebView autoplay.
           video.muted = true;
-          void video.play().catch(() => undefined);
+          void video.play().then(markLive).catch(() => undefined);
         }
+        // Stream attached — don't wait forever for VIDEO_PLAY_STARTED.
+        const id = window.setTimeout(markLive, LIVE_FALLBACK_MS);
+        timersRef.current.push(id);
       });
       client.addListener(AnamEvent.VIDEO_PLAY_STARTED, () => {
-        const video = videoRef.current;
-        if (video) video.muted = false;
-        setPhase("live");
-        setStatus("На линии · говори с Adeline");
+        markLive();
       });
       client.addListener(AnamEvent.CONNECTION_CLOSED, (reason, details) => {
-        setError(`Соединение закрыто: ${reason}${details ? ` · ${details}` : ""}`);
-        setPhase("error");
-        setStatus("Стрим остановлен");
         clientRef.current = null;
+        clearTimers();
+        if (intentionalStopRef.current || reason === "CONNECTION_CLOSED_CODE_NORMAL") {
+          if (phaseRef.current !== "idle") {
+            setError("");
+            setPhaseSafe("idle");
+            setStatus("Нажми, чтобы набрать Adeline Kalen");
+          }
+          return;
+        }
+        setError(friendlyCloseReason(String(reason), details));
+        setPhaseSafe("error");
+        setStatus("Стрим остановлен");
       });
       client.addListener(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, (event) => {
         const role = (event.role || "").toLowerCase();
@@ -192,29 +259,38 @@ export function Live({ onClose }: Props) {
       if (video) {
         video.muted = true;
         video.setAttribute("playsinline", "true");
+        video.setAttribute("webkit-playsinline", "true");
       }
 
+      const timeoutId = window.setTimeout(() => {
+        if (phaseRef.current !== "connecting" || !clientRef.current) return;
+        void (async () => {
+          await stopSession();
+          setError("Таймаут соединения. Разреши микрофон и попробуй снова.");
+          setPhaseSafe("error");
+          setStatus("Не удалось соединиться");
+        })();
+      }, CONNECT_TIMEOUT_MS);
+      timersRef.current.push(timeoutId);
+
       await client.streamToVideoElement("persona-video");
-      window.setTimeout(() => {
-        if (clientRef.current && startingRef.current) {
-          const v = videoRef.current;
-          if (v?.srcObject) {
-            void v.play().then(() => {
-              v.muted = false;
-              setPhase((p) => (p === "connecting" ? "live" : p));
-              setStatus((s) =>
-                s.includes("Думаю") ? s : "На линии · говори с Adeline",
-              );
-            });
-          }
-        }
-      }, 2500);
     } catch (e) {
+      clearTimers();
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      setPhase("error");
+      setPhaseSafe("error");
       setStatus(`Ошибка: ${msg}`);
+      const client = clientRef.current;
       clientRef.current = null;
+      if (client) {
+        intentionalStopRef.current = true;
+        try {
+          await client.stopStreaming();
+        } catch {
+          /* ignore */
+        }
+        intentionalStopRef.current = false;
+      }
     } finally {
       startingRef.current = false;
     }
@@ -242,19 +318,18 @@ export function Live({ onClose }: Props) {
 
   return (
     <div className="relative mx-auto flex h-[var(--tg-viewport-stable-height,100vh)] w-full max-w-md flex-col overflow-hidden bg-black">
+      {/* Keep video painted (not opacity-0) so WebView fires play / VIDEO_PLAY_STARTED */}
       <video
         id="persona-video"
         ref={videoRef}
         autoPlay
         playsInline
         muted
-        className={`absolute inset-0 h-full w-full object-cover bg-black ${
-          isLive ? "opacity-100" : "opacity-0 pointer-events-none"
-        }`}
+        className="absolute inset-0 h-full w-full object-cover bg-black"
       />
 
       {showPreview ? (
-        <div className="absolute inset-0">
+        <div className="absolute inset-0 z-[1]">
           {previewUrl ? (
             <img
               src={previewUrl}
@@ -307,7 +382,7 @@ export function Live({ onClose }: Props) {
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-neutral-800 bg-black/65 px-4 py-5 backdrop-blur">
             <Loader2 className="h-9 w-9 animate-spin text-gold" />
             <p className="nx-connecting-text text-center text-sm font-medium text-white">
-              {CONNECTING_STATUS}
+              {status || CONNECTING_STATUS}
             </p>
             <Button
               type="button"

@@ -44,18 +44,20 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-md min-h-(--tg-viewport-stable-height,100vh) flex-col gap-3 overflow-x-hidden bg-black p-3 pb-[calc(16px+env(safe-area-inset-bottom))]">
       <Card className="min-w-0 overflow-hidden border-neutral-800 bg-[#111] shadow-none">
-        <div className="relative aspect-4/5 max-h-[46vh] bg-neutral-950">
-          {card?.imageUrl ? (
-            <img
-              src={card.imageUrl}
-              alt={displayName}
-              className="h-full w-full object-cover object-top"
-            />
-          ) : (
-            <div className="flex h-full items-center justify-center text-5xl font-semibold tracking-widest text-neutral-600">
-              AK
-            </div>
-          )}
+        <div className="flex w-full justify-center bg-neutral-950">
+          <div className="relative mx-auto aspect-4/5 h-[min(46vh,420px)] w-auto max-w-full">
+            {card?.imageUrl ? (
+              <img
+                src={card.imageUrl}
+                alt={displayName}
+                className="absolute inset-0 h-full w-full object-cover object-center"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center text-5xl font-semibold tracking-widest text-neutral-600">
+                AK
+              </div>
+            )}
+          </div>
         </div>
         <CardContent className="min-w-0 space-y-3 pt-4">
           <div className="min-w-0">

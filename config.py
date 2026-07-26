@@ -84,7 +84,12 @@ settings = load_settings()
 
 
 def get_webapp_public_url() -> str:
-    """Runtime URL (tunnel may update it after boot)."""
-    from services.tunnel import get_public_url
+    """Runtime URL (tunnel may update it after boot).
 
+    With START_TUNNEL=1 never return a stale .env URL — only the live tunnel.
+    """
+    from services.tunnel import get_public_url, tunnel_enabled
+
+    if tunnel_enabled():
+        return get_public_url("")
     return get_public_url(settings.webapp_public_url)

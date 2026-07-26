@@ -36,7 +36,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
+    if (res.status === 503 || res.status === 502) {
+      throw new Error(
+        "Сервер/туннель недоступен. В чате бота нажми /start и открой Mini App новой кнопкой.",
+      );
+    }
+    const err = await res.json().catch(() => ({} as { error?: string }));
     throw new Error(err.error || `HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
