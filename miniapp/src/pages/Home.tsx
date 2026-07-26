@@ -117,7 +117,7 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
                 className="absolute inset-0 h-full w-full object-cover object-[center_18%]"
               />
             ) : (
-              <div className="flex h-full min-h-[280px] w-full items-center justify-center text-5xl font-semibold tracking-widest text-neutral-600">
+              <div className="flex h-full min-h-70 w-full items-center justify-center text-5xl font-semibold tracking-widest text-neutral-600">
                 AK
               </div>
             )}
