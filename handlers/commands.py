@@ -86,7 +86,11 @@ async def cmd_memory(message: Message) -> None:
     await message.answer(
         "Память:\n"
         f"Фаза: {view.get('phase')}\n"
-        f"Интро было: {'да' if view.get('intro_shown') else 'нет'}\n"
+        f"Этап продаж: {view.get('sales_stage') or '—'}\n"
+        f"Категория: {view.get('user_category') or '—'}\n"
+        f"Язык: {view.get('dialog_language') or '—'}\n"
+        f"Отрасль: {view.get('industry') or '—'}\n"
+        f"Интро: {'да' if view.get('intro_shown') else 'нет'}\n"
         f"Mini App: {'открывали' if view.get('miniapp_opened') else 'ещё нет'}\n"
         f"Цели: {goals_s}\n"
         f"Задачи:\n{tasks_s}"

@@ -79,8 +79,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "update_user_memory",
             "description": (
-                "Обновить память пользователя. "
-                "После первого знакомства ставь intro_shown=true и phase=active."
+                "Обновить FSM-память продаж. После интро: intro_shown=true, "
+                "sales_stage=qualification|discovery|…, dialog_language, user_category."
             ),
             "parameters": {
                 "type": "object",
@@ -95,6 +95,42 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "type": "string",
                         "enum": ["unknown", "text", "voice", "video"],
                     },
+                    "dialog_language": {
+                        "type": "string",
+                        "enum": ["ru", "en"],
+                    },
+                    "user_category": {
+                        "type": "string",
+                        "enum": [
+                            "Enterprise",
+                            "SMB",
+                            "Government",
+                            "Partner",
+                            "Investor",
+                            "Media",
+                            "Developer",
+                            "Student",
+                            "General visitor",
+                        ],
+                    },
+                    "sales_stage": {
+                        "type": "string",
+                        "enum": [
+                            "start",
+                            "greeting",
+                            "qualification",
+                            "discovery",
+                            "product",
+                            "pilot",
+                            "partnership",
+                            "overview",
+                            "escalate",
+                        ],
+                    },
+                    "industry": {"type": "string"},
+                    "company_size": {"type": "string"},
+                    "process_goal": {"type": "string"},
+                    "why_now": {"type": "string"},
                     "goals": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -206,6 +242,13 @@ async def execute_tool(
             "knows_nullxes",
             "phase",
             "preferred_channel",
+            "dialog_language",
+            "user_category",
+            "sales_stage",
+            "industry",
+            "company_size",
+            "process_goal",
+            "why_now",
             "notes",
             "goals",
         ):

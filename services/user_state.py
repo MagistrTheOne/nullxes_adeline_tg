@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 USERS_DIR = Path(__file__).resolve().parent.parent / "data" / "users"
 USERS_DIR.mkdir(parents=True, exist_ok=True)
 
-# new → onboarding → active
+# Sales FSM memory (phase stays coarse; sales_stage drives dialogue)
 DEFAULT_STATE: dict[str, Any] = {
     "phase": "new",
     "intro_shown": False,
@@ -22,6 +22,13 @@ DEFAULT_STATE: dict[str, Any] = {
     "miniapp_opened": False,
     "preferred_channel": "unknown",
     "display_name": "",
+    "dialog_language": "",
+    "user_category": "",
+    "sales_stage": "start",
+    "industry": "",
+    "company_size": "",
+    "process_goal": "",
+    "why_now": "",
     "goals": [],
     "notes": "",
     "tasks": [],
@@ -104,11 +111,16 @@ class UserStateStore:
         return self.save(user_id, state)
 
     def mark_intro_done(self, user_id: int) -> dict[str, Any]:
+        state = self.get(user_id)
+        stage = state.get("sales_stage") or "start"
+        if stage in {"", "start", "greeting"}:
+            stage = "qualification"
         return self.patch(
             user_id,
             intro_shown=True,
             knows_nullxes=True,
             phase="active",
+            sales_stage=stage,
         )
 
     def mark_miniapp_opened(self, user_id: int) -> dict[str, Any]:
@@ -125,6 +137,13 @@ class UserStateStore:
             "miniapp_opened": s.get("miniapp_opened"),
             "preferred_channel": s.get("preferred_channel"),
             "display_name": s.get("display_name"),
+            "dialog_language": s.get("dialog_language") or "",
+            "user_category": s.get("user_category") or "",
+            "sales_stage": s.get("sales_stage") or "start",
+            "industry": s.get("industry") or "",
+            "company_size": s.get("company_size") or "",
+            "process_goal": s.get("process_goal") or "",
+            "why_now": s.get("why_now") or "",
             "goals": s.get("goals") or [],
             "notes": s.get("notes") or "",
             "open_tasks_count": len(open_tasks),
@@ -193,16 +212,16 @@ user_states = UserStateStore()
 
 
 def greeting_for(user_id: int, display_name: str) -> str:
-    """Short /start only — full First Greeting is spoken in Live / first chat."""
+    """Short /start only — FSM First Greeting runs in chat / Live."""
     state = user_states.touch_start(user_id, display_name=display_name)
-    name = display_name or "друг"
+    name = display_name or "коллега"
     if state.get("intro_shown") or int(state.get("start_count") or 0) > 1:
         return (
-            f"Снова рада вас видеть, {name}. На связи — чем займёмся?\n"
+            f"{name}, снова на связи по NULLXES. Чем продолжим?\n"
             f"/help · /voice on|off · /app"
         )
     return (
-        f"Здравствуйте, {name}! Я Аделина — цифровой сотрудник NULLXES.\n"
-        f"Откройте Mini App или напишите, чем помочь.\n"
+        f"Здравствуйте, {name}. Аделина Кален, Enterprise AI Sales Executive, NULLXES.\n"
+        f"Напишите задачу или откройте Mini App.\n"
         f"/help · /voice on|off · /app"
     )

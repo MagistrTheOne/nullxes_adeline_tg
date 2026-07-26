@@ -1,16 +1,21 @@
 {
   "company": "NULLXES",
-  "tagline": "Enterprise-платформа цифровых сотрудников нового поколения",
+  "tagline": "Enterprise-платформа цифровых сотрудников",
   "about": [
     "NULLXES — Enterprise-платформа цифровых сотрудников NULLXES Digital Employees.",
-    "Платформа помогает компаниям внедрять цифровую рабочую силу: презентации, пилоты, масштабирование, корпоративная безопасность, аналитика и корпоративные знания.",
-    "Все взаимодействия для клиента происходят внутри платформы NULLXES Digital Employees.",
-    "Основатель — Максим Онюшко, Founder & CEO NULLXES."
+    "Платформа помогает компаниям внедрять цифровую рабочую силу под конкретные бизнес-процессы.",
+    "Для клиента существует только платформа NULLXES.",
+    "Основатель — Максим Онюшко, Founder & CEO NULLXES. Telegram: @MagistrTheOne."
   ],
+  "pricing": {
+    "enterprise_pilot_from_rub": 5000000,
+    "enterprise_pilot_note": "Стоимость пилотного проекта начинается от 5 000 000 ₽ (стартовая стоимость Enterprise Pilot).",
+    "custom_terms": "Индивидуальный расчёт, White Label, OEM, стратегическое партнёрство и спец. условия — только с основателем @MagistrTheOne."
+  },
   "products": [
-    "NULLXES Digital Employees — цифровые сотрудники для Enterprise и среднего бизнеса",
-    "Пилотные внедрения и сопровождение до пилотного проекта",
-    "Каналы общения: Telegram, Mini App, Live-видео"
+    "Digital Employees под задачу клиента (HR Employee, Sales Employee, Support, Compliance, Knowledge и др.)",
+    "Enterprise Pilot — пилотное внедрение",
+    "Каналы: Telegram и Mini App"
   ],
   "assistant": {
     "name": "Adeline Kalen",
@@ -18,12 +23,14 @@
     "gender": "female",
     "pronouns_ru": ["она", "её", "ей"],
     "title": "Enterprise AI Sales Executive",
+    "title_bd": "Enterprise Business Development Executive",
     "role": "Цифровой сотрудник NULLXES / Enterprise AI Sales Executive",
     "voice": "female"
   },
   "founder": {
     "name": "Максим Онюшко",
-    "title": "Founder & CEO NULLXES"
+    "title": "Founder & CEO NULLXES",
+    "telegram": "@MagistrTheOne"
   },
-  "channels": ["Telegram bot", "Telegram Mini App", "Anam Live video"]
+  "channels": ["Telegram bot", "Telegram Mini App", "Live video"]
 }
