@@ -11,6 +11,7 @@ import {
 import { backButton, mainButton } from "@tma.js/sdk-react";
 import { chatWithBrain, createSessionToken, fetchPersona } from "@/api/client";
 import { AnamEvent, createAnamClient, type LiveClient } from "@/lib/anam";
+import { forSpeech } from "@/lib/pronounce";
 
 type Props = {
   onClose: () => void;
@@ -214,21 +215,21 @@ export function Live({ onClose }: Props) {
     if (!client || !text.trim()) return;
     setTurnSafe("speaking");
     setStatus("Отвечает…");
+    // Caption keeps NULLXES spelling; TTS gets phonetic rewrite.
     if (showCaptionsRef.current) setCaption(text);
-    // Prefer talk() — more reliable TTS on Telegram WebView than TalkMessageStream alone.
+    const spoken = forSpeech(text);
     try {
-      await client.talk(text);
+      await client.talk(spoken);
     } catch {
       try {
         const talkStream = client.createTalkMessageStream();
         if (talkStream.isActive()) {
-          await talkStream.streamMessageChunk(text, true);
+          await talkStream.streamMessageChunk(spoken, true);
         }
       } catch {
         /* ignore — UI already shows caption */
       }
     }
-    // Keep persona audio element unmuted after each utterance.
     const audio = audioRef.current;
     if (audio) {
       audio.muted = false;
@@ -252,6 +253,10 @@ export function Live({ onClose }: Props) {
     try {
       const { reply } = await chatWithBrain(trimmed);
       if (!clientRef.current) return;
+      // Natural beat before speaking (1–2s), like a live conversation.
+      const beat = 1000 + Math.floor(Math.random() * 1000);
+      await new Promise((r) => window.setTimeout(r, beat));
+      if (!clientRef.current || intentionalStopRef.current) return;
       await speakAsPersona(reply);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -299,8 +304,8 @@ export function Live({ onClose }: Props) {
         if (!clientRef.current) return;
         greetingSpoken = true;
         void (async () => {
-          // Wait a beat so video/audio pipes are ready.
-          await new Promise((r) => window.setTimeout(r, 400));
+          // Short natural beat before first greeting.
+          await new Promise((r) => window.setTimeout(r, 900));
           if (!clientRef.current || intentionalStopRef.current) return;
           busyRef.current = true;
           try {
@@ -402,12 +407,8 @@ export function Live({ onClose }: Props) {
         const chunk = event.content || "";
 
         if (role === "persona" || role === "assistant") {
+          // Caption already set to full reply in speakAsPersona — don't stream-append (duplicates).
           if (chunk) setTurnSafe("speaking");
-          if (showCaptionsRef.current) {
-            setCaption((prev) =>
-              event.endOfSpeech ? chunk || prev : `${prev}${chunk}`.slice(-280),
-            );
-          }
           if (event.endOfSpeech && !busyRef.current) {
             setTurnSafe(micMutedRef.current ? "muted" : "listening");
             setStatus("Live session · Secure connection");
@@ -599,7 +600,7 @@ export function Live({ onClose }: Props) {
       </p>
 
       {showCaptions && caption && isLive ? (
-        <div className="relative z-10 mx-3 mt-auto mb-2 rounded-xl border border-white/10 bg-black/55 px-3 py-2 text-[13px] leading-snug text-white backdrop-blur-md">
+        <div className="relative z-10 mx-auto mt-auto mb-2 max-w-[58%] rounded-xl border border-white/10 bg-black/55 px-2.5 py-1.5 text-center text-[12px] leading-snug text-white backdrop-blur-md">
           {caption}
         </div>
       ) : (

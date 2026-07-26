@@ -20,6 +20,7 @@ from anam import (  # pyright: ignore[reportMissingImports]
 from anam.client import Session  # pyright: ignore[reportMissingImports]
 
 from config import settings
+from services.pronounce import for_speech
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ class AnamBridge:
 
                     await asyncio.sleep(0.4)
                     state.collecting = True
-                    await session.talk(text)
+                    await session.talk(for_speech(text))
 
                     try:
                         await asyncio.wait_for(
