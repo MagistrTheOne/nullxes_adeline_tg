@@ -18,6 +18,8 @@ class Settings:
     anam_persona_id: str
     anam_avatar_id: str
     anam_voice_id: str
+    # Stock Anam female voice if ElevenLabs / custom voice fails or is not ready.
+    anam_voice_fallback_id: str
     allowed_user_ids: frozenset[int]
     anam_reply_timeout: float = 45.0
     # Live stream cap (Anam). Free plan max ≈ 180s; Lab persona may ship a lower default (e.g. 39).
@@ -46,6 +48,10 @@ def load_settings() -> Settings:
     anam_persona_id = os.getenv("ANAM_PERSONA_ID", "").strip()
     anam_avatar_id = os.getenv("ANAM_AVATAR_ID", "").strip()
     anam_voice_id = os.getenv("ANAM_VOICE_ID", "").strip()
+    anam_voice_fallback_id = (
+        os.getenv("ANAM_VOICE_FALLBACK_ID", "").strip()
+        or "90919e2e-4fc0-11f1-84b0-52bacf74fa75"
+    )
 
     missing = [
         name
@@ -80,6 +86,7 @@ def load_settings() -> Settings:
         anam_persona_id=anam_persona_id,
         anam_avatar_id=anam_avatar_id,
         anam_voice_id=anam_voice_id,
+        anam_voice_fallback_id=anam_voice_fallback_id,
         allowed_user_ids=allowed,
         anam_max_session_seconds=max_session,
         webapp_public_url=os.getenv("WEBAPP_PUBLIC_URL", "").strip(),

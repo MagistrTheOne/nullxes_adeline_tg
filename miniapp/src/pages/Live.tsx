@@ -215,16 +215,25 @@ export function Live({ onClose }: Props) {
     setTurnSafe("speaking");
     setStatus("Отвечает…");
     if (showCaptionsRef.current) setCaption(text);
-    // Anam custom-LLM path: TalkMessageStream → TTS + lipsync
+    // Prefer talk() — more reliable TTS on Telegram WebView than TalkMessageStream alone.
     try {
-      const talkStream = client.createTalkMessageStream();
-      if (talkStream.isActive()) {
-        await talkStream.streamMessageChunk(text, true);
-      } else {
-        await client.talk(text);
-      }
-    } catch {
       await client.talk(text);
+    } catch {
+      try {
+        const talkStream = client.createTalkMessageStream();
+        if (talkStream.isActive()) {
+          await talkStream.streamMessageChunk(text, true);
+        }
+      } catch {
+        /* ignore — UI already shows caption */
+      }
+    }
+    // Keep persona audio element unmuted after each utterance.
+    const audio = audioRef.current;
+    if (audio) {
+      audio.muted = false;
+      audio.volume = 1;
+      void audio.play().catch(() => undefined);
     }
     setStatus("Слушает…");
     setTurnSafe(micMutedRef.current ? "muted" : "listening");

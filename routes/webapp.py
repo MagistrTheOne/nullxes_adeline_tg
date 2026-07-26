@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 DIST_DIR = ROOT / "miniapp" / "dist"
 ANAM_SESSION_URL = "https://api.anam.ai/v1/auth/session-token"
+ANAM_VOICE_URL = "https://api.anam.ai/v1/voices/{voice_id}"
 
 
 def _auth_user(request: web.Request) -> tuple[int | None, web.Response | None]:
@@ -36,6 +37,57 @@ def _auth_user(request: web.Request) -> tuple[int | None, web.Response | None]:
     return user_id, None
 
 
+async def _voice_usable(
+    session: aiohttp.ClientSession,
+    headers: dict[str, str],
+    voice_id: str,
+) -> bool:
+    """ElevenLabs imports often return 200 but stay silent until sampleUrl exists."""
+    if not voice_id:
+        return False
+    try:
+        async with session.get(
+            ANAM_VOICE_URL.format(voice_id=voice_id),
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=12),
+        ) as resp:
+            if resp.status >= 400:
+                return False
+            body = await resp.json(content_type=None)
+            provider = str(body.get("provider") or "").upper()
+            sample = body.get("sampleUrl") or body.get("previewSampleUrl")
+            if provider == "ELEVENLABS" and not sample:
+                logger.warning(
+                    "ElevenLabs voice %s not ready (no sampleUrl) — will use Anam fallback",
+                    voice_id,
+                )
+                return False
+            return True
+    except Exception as exc:
+        logger.warning("voice probe failed %s: %s", voice_id, exc)
+        return False
+
+
+async def _resolve_voice_ids(
+    session: aiohttp.ClientSession,
+    headers: dict[str, str],
+) -> list[str]:
+    """Primary ElevenLabs (if ready), then stock Anam female fallback."""
+    primary = settings.anam_voice_id.strip()
+    fallback = settings.anam_voice_fallback_id.strip()
+    ordered: list[str] = []
+    if primary and await _voice_usable(session, headers, primary):
+        ordered.append(primary)
+    elif primary:
+        logger.warning("Skipping unusable primary voice %s", primary)
+    if fallback and fallback not in ordered:
+        ordered.append(fallback)
+    if primary and primary not in ordered:
+        # Last resort: still try primary if probe lied / transient.
+        ordered.append(primary)
+    return ordered
+
+
 async def create_session_token(request: web.Request) -> web.Response:
     user_id, err = _auth_user(request)
     if err:
@@ -46,63 +98,77 @@ async def create_session_token(request: web.Request) -> web.Response:
         user_states.patch(int(user_id), preferred_channel="video")
 
     # CUSTOMER_CLIENT persona: Anam = face/voice/STT; NULLXES OpenAI = brain.
-    # languageCode=ru for STT; directorNotes for Cara-4 performance.
     intro_shown = False
     if user_id:
         intro_shown = bool(user_states.get(int(user_id)).get("intro_shown"))
 
-    persona_config: dict = {
-        "personaId": settings.anam_persona_id,
-        "maxSessionLengthSeconds": settings.anam_max_session_seconds,
-        "skipGreeting": True,
-        "languageCode": "ru",
-        "directorNotes": {
-            "expressivity": 0.5,
-            "customStylePrompt": "спокойная",
-        },
-    }
-    # Female ElevenLabs voice (Anam voice UUID). Override even if Lab persona drifts.
-    if settings.anam_voice_id:
-        persona_config["voiceId"] = settings.anam_voice_id
-    if settings.anam_avatar_id:
-        persona_config["avatarId"] = settings.anam_avatar_id
-    payload = {"personaConfig": persona_config}
     headers = {
         "Authorization": f"Bearer {settings.anam_api_key}",
         "Content-Type": "application/json",
     }
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(
-                ANAM_SESSION_URL,
-                json=payload,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                body = await resp.json(content_type=None)
-                if resp.status >= 400:
-                    logger.error("Anam session-token error %s: %s", resp.status, body)
+            voice_ids = await _resolve_voice_ids(session, headers)
+            if not voice_ids:
+                voice_ids = [settings.anam_voice_fallback_id]
+
+            last_error: object = None
+            for voice_id in voice_ids:
+                persona_config: dict = {
+                    "personaId": settings.anam_persona_id,
+                    "maxSessionLengthSeconds": settings.anam_max_session_seconds,
+                    "skipGreeting": True,
+                    "languageCode": "ru",
+                    "voiceId": voice_id,
+                    "directorNotes": {
+                        "expressivity": 0.5,
+                        "customStylePrompt": "спокойная",
+                    },
+                }
+                if settings.anam_avatar_id:
+                    persona_config["avatarId"] = settings.anam_avatar_id
+                payload = {"personaConfig": persona_config}
+                async with session.post(
+                    ANAM_SESSION_URL,
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    body = await resp.json(content_type=None)
+                    if resp.status >= 400:
+                        last_error = body
+                        logger.error(
+                            "Anam session-token error voice=%s %s: %s",
+                            voice_id,
+                            resp.status,
+                            body,
+                        )
+                        continue
+
+                    logger.info("Live session voice=%s", voice_id)
+                    greeting = RETURNING_GREETING if intro_shown else FIRST_GREETING
+                    if user_id and not intro_shown:
+                        user_states.mark_intro_done(int(user_id))
                     return web.json_response(
-                        {"error": "anam_session_failed", "details": body},
-                        status=502,
+                        {
+                            "sessionToken": body.get("sessionToken")
+                            or body.get("session_token"),
+                            "personaId": settings.anam_persona_id,
+                            "avatarId": settings.anam_avatar_id,
+                            "voiceId": voice_id,
+                            "userId": user_id,
+                            "name": "Adeline Kalen",
+                            "role": "Аделина Кален · NULLXES",
+                            "greeting": greeting,
+                            "speakGreeting": True,
+                            "languageCode": "ru",
+                        }
                     )
-                greeting = RETURNING_GREETING if intro_shown else FIRST_GREETING
-                if user_id and not intro_shown:
-                    user_states.mark_intro_done(int(user_id))
-                return web.json_response(
-                    {
-                        "sessionToken": body.get("sessionToken")
-                        or body.get("session_token"),
-                        "personaId": settings.anam_persona_id,
-                        "avatarId": settings.anam_avatar_id,
-                        "userId": user_id,
-                        "name": "Adeline Kalen",
-                        "role": "Аделина Кален · NULLXES",
-                        "greeting": greeting,
-                        "speakGreeting": True,
-                        "languageCode": "ru",
-                    }
-                )
+
+            return web.json_response(
+                {"error": "anam_session_failed", "details": last_error},
+                status=502,
+            )
     except Exception as exc:
         logger.exception("session-token request failed")
         return web.json_response({"error": str(exc)}, status=500)
