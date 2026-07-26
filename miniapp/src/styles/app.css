@@ -278,3 +278,18 @@ button {
   color: #ff8f8f;
   font-size: 0.85rem;
 }
+
+/* Full-bleed Adelina stage: crop Anam landscape / letterboxed frames on phone */
+.persona-stage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 18%;
+  /* Zoom past baked black bars in WebRTC frames (TG WebView) */
+  transform: scale(1.32);
+  transform-origin: center center;
+}
+
+video.persona-stage {
+  background: #000;
+}

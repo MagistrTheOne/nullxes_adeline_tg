@@ -551,24 +551,25 @@ export function Live({ onClose }: Props) {
               : "bg-neutral-400";
 
   return (
-    <div className="relative mx-auto flex h-[var(--tg-viewport-stable-height,100vh)] w-full max-w-md flex-col overflow-hidden bg-black">
+    <div className="relative mx-auto flex h-(--tg-viewport-stable-height,100vh) w-full max-w-md flex-col overflow-hidden bg-black">
+      {/* Cover + zoom: Anam WebRTC often ships landscape with baked letterbox bars */}
       <video
         id="persona-video"
         ref={videoRef}
         autoPlay
         playsInline
         muted
-        className="absolute inset-0 z-0 h-full w-full object-cover object-center bg-black"
+        className="persona-stage absolute inset-0 z-0 h-full w-full bg-black"
       />
       <audio ref={audioRef} autoPlay playsInline className="hidden" />
 
       {showPreview ? (
-        <div className="absolute inset-0 z-[1]">
+        <div className="absolute inset-0 z-1">
           {previewUrl ? (
             <img
               src={previewUrl}
               alt={PERSONA_NAME}
-              className="h-full w-full object-cover object-top"
+              className="persona-stage h-full w-full"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-[#0a0a0a] text-4xl font-semibold tracking-[0.2em] text-neutral-600">
@@ -580,8 +581,8 @@ export function Live({ onClose }: Props) {
         </div>
       ) : (
         <>
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] h-28 bg-linear-to-b from-black/55 to-transparent" />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] h-2/5 bg-linear-to-t from-black/70 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-1 h-28 bg-linear-to-b from-black/55 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-1 h-2/5 bg-linear-to-t from-black/70 to-transparent" />
         </>
       )}
 
@@ -623,7 +624,7 @@ export function Live({ onClose }: Props) {
         </div>
       </header>
 
-      <p className="pointer-events-none absolute left-3 top-[4.5rem] z-[2] text-[9px] font-medium tracking-[0.18em] text-white/35">
+      <p className="pointer-events-none absolute left-3 top-18 z-2 text-[9px] font-medium tracking-[0.18em] text-white/35">
         NULLXES
       </p>
 

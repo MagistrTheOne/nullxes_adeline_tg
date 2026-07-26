@@ -239,7 +239,13 @@ async def persona_card(request: web.Request) -> web.Response:
             ) as resp:
                 if resp.status < 400:
                     data = await resp.json()
-                    image_url = (data.get("avatar") or {}).get("imageUrl") or ""
+                    avatar = data.get("avatar") or {}
+                    # Prefer portrait for phone UI (landscape preview looks letterboxed).
+                    image_url = (
+                        avatar.get("portraitImageUrl")
+                        or avatar.get("imageUrl")
+                        or ""
+                    )
     except Exception as exc:
         logger.warning("persona image fetch failed: %s", exc)
 
