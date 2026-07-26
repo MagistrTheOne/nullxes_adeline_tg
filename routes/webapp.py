@@ -61,6 +61,11 @@ async def create_session_token(request: web.Request) -> web.Response:
             "customStylePrompt": "спокойная",
         },
     }
+    # Female ElevenLabs voice (Anam voice UUID). Override even if Lab persona drifts.
+    if settings.anam_voice_id:
+        persona_config["voiceId"] = settings.anam_voice_id
+    if settings.anam_avatar_id:
+        persona_config["avatarId"] = settings.anam_avatar_id
     payload = {"personaConfig": persona_config}
     headers = {
         "Authorization": f"Bearer {settings.anam_api_key}",
