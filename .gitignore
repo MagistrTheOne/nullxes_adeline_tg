@@ -16,3 +16,5 @@ miniapp/dist/
 .tunnel.*
 data/chats/*.json
 !data/chats/.gitkeep
+data/users/*.json
+!data/users/.gitkeep

@@ -74,10 +74,10 @@ export function Chat({ onClose }: Props) {
         <Button type="button" variant="ghost" size="icon" className="h-10 w-10" onClick={onClose}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <Avatar src={avatarUrl} alt="Adeline" className="h-9 w-9" />
+        <Avatar src={avatarUrl} alt="Adeline Kalen" className="h-9 w-9 grayscale" />
         <div className="min-w-0">
-          <p className="truncate font-semibold">Adeline Kalen</p>
-          <p className="truncate text-xs text-muted-foreground">Общий чат с Telegram</p>
+          <p className="truncate font-semibold">Adeline Kalen из NULLXES</p>
+          <p className="truncate text-xs text-muted-foreground">Чат</p>
         </div>
       </header>
 
@@ -105,7 +105,7 @@ export function Chat({ onClose }: Props) {
             </div>
           ))}
           {busy ? (
-            <p className="text-xs text-muted-foreground">Adeline печатает…</p>
+            <p className="text-xs text-muted-foreground">Печатает…</p>
           ) : null}
           {error ? <p className="text-sm text-destructive">{error}</p> : null}
           <div ref={bottomRef} />
@@ -119,7 +119,7 @@ export function Chat({ onClose }: Props) {
         <Input
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Сообщение Adeline…"
+          placeholder="Сообщение…"
           disabled={busy}
         />
         <Button type="submit" size="icon" disabled={busy || !text.trim()} aria-label="Send">

@@ -24,23 +24,23 @@
 }
 
 :root {
-  --background: #0b0d10;
-  --foreground: #f2f4f7;
-  --card: #12161c;
-  --card-foreground: #f2f4f7;
-  --primary: #c8a45a;
-  --primary-foreground: #0b0d10;
-  --secondary: #1a212c;
-  --secondary-foreground: #f2f4f7;
-  --muted: #1a212c;
-  --muted-foreground: #9aa3af;
-  --accent: #243041;
-  --accent-foreground: #f2f4f7;
-  --destructive: #e24b4b;
-  --border: #243041;
-  --input: #243041;
-  --ring: #c8a45a;
-  --radius: 0.9rem;
+  --background: #000000;
+  --foreground: #f5f5f5;
+  --card: #0a0a0a;
+  --card-foreground: #f5f5f5;
+  --primary: #ffffff;
+  --primary-foreground: #000000;
+  --secondary: #141414;
+  --secondary-foreground: #f5f5f5;
+  --muted: #141414;
+  --muted-foreground: #a3a3a3;
+  --accent: #1f1f1f;
+  --accent-foreground: #f5f5f5;
+  --destructive: #b91c1c;
+  --border: #2a2a2a;
+  --input: #2a2a2a;
+  --ring: #ffffff;
+  --radius: 0.75rem;
   --tg-viewport-height: 100vh;
   font-family: "Segoe UI", "IBM Plex Sans", system-ui, sans-serif;
 }
@@ -60,7 +60,5 @@ body,
 }
 
 body {
-  background:
-    radial-gradient(120% 70% at 50% -15%, #1c2430 0%, transparent 55%),
-    var(--background);
+  background: #000000;
 }

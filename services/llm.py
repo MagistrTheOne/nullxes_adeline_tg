@@ -15,8 +15,9 @@ from pathlib import Path
 from openai import AsyncOpenAI  # pyright: ignore[reportMissingImports]
 
 from config import settings
-from prompts.adelina import SYSTEM_PROMPT
+from prompts.adelina import SYSTEM_PROMPT, build_user_state_block
 from services.tools.registry import TOOL_DEFINITIONS, execute_tool
+from services.user_state import user_states
 
 logger = logging.getLogger(__name__)
 
@@ -79,13 +80,16 @@ class AdelinaBrain:
 
     async def chat(self, user_id: int, user_text: str) -> str:
         self._ensure_loaded(user_id)
+        user_states.touch_message(user_id)
         history = self._history[user_id]
         history.append({"role": "user", "content": user_text})
         if len(history) > MAX_HISTORY:
             del history[:-MAX_HISTORY]
 
+        state_block = build_user_state_block(user_states.public_view(user_id))
         messages: list[dict] = [
             {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": state_block},
             *history,
         ]
 
@@ -124,6 +128,7 @@ class AdelinaBrain:
                     result = await execute_tool(
                         tc.function.name,
                         tc.function.arguments or "{}",
+                        user_id=user_id,
                     )
                     logger.info("tool %s -> %s", tc.function.name, result[:200])
                     tool_msg = {
@@ -133,6 +138,11 @@ class AdelinaBrain:
                     }
                     messages.append(tool_msg)
                     history.append(tool_msg)
+                # refresh state block after memory tools
+                messages[1] = {
+                    "role": "system",
+                    "content": build_user_state_block(user_states.public_view(user_id)),
+                }
                 continue
 
             reply = (choice.content or "").strip()
@@ -142,6 +152,10 @@ class AdelinaBrain:
             reply = "Не смогла сформировать ответ. Попробуй переформулировать."
 
         history.append({"role": "assistant", "content": reply})
+        # Returning users chatting imply intro is done
+        st = user_states.get(user_id)
+        if not st.get("intro_shown") and int(st.get("message_count") or 0) >= 1:
+            user_states.mark_intro_done(user_id)
         self._save(user_id)
         return reply
 

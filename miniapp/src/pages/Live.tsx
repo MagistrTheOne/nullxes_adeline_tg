@@ -36,7 +36,7 @@ export function Live({ onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [phase, setPhase] = useState<Phase>("idle");
-  const [status, setStatus] = useState("Нажми Start, чтобы вызвать Adeline");
+  const [status, setStatus] = useState("Нажми Start, чтобы набрать Adeline Kalen");
   const [caption, setCaption] = useState("");
   const [showCaptions, setShowCaptions] = useState(true);
   const [micMuted, setMicMuted] = useState(false);
@@ -95,7 +95,7 @@ export function Live({ onClose }: Props) {
     setSeconds(0);
     setCaption("");
     setMicMuted(false);
-    setStatus("Нажми Start, чтобы вызвать Adeline");
+    setStatus("Нажми Start, чтобы набрать Adeline Kalen");
   }, []);
 
   async function handleUserSpeech(text: string) {
@@ -106,10 +106,10 @@ export function Live({ onClose }: Props) {
       const { reply } = await chatWithBrain(text);
       if (showCaptionsRef.current) setCaption(reply);
       await clientRef.current.talk(reply);
-      setStatus("LIVE · говори с Adeline");
+      setStatus("На линии · говори с Adeline");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setStatus(`Brain error: ${msg}`);
+      setStatus(`Ошибка: ${msg}`);
     } finally {
       busyRef.current = false;
     }
@@ -157,7 +157,7 @@ export function Live({ onClose }: Props) {
           video.muted = false;
         }
         setPhase("live");
-        setStatus("LIVE · говори с Adeline");
+        setStatus("На линии · говори с Adeline");
       });
       client.addListener(AnamEvent.CONNECTION_CLOSED, (reason, details) => {
         setError(`Соединение закрыто: ${reason}${details ? ` · ${details}` : ""}`);
@@ -204,7 +204,7 @@ export function Live({ onClose }: Props) {
               v.muted = false;
               setPhase((p) => (p === "connecting" ? "live" : p));
               setStatus((s) =>
-                s.includes("Думаю") ? s : "LIVE · говори с Adeline",
+                s.includes("Думаю") ? s : "На линии · говори с Adeline",
               );
             });
           }
@@ -260,7 +260,7 @@ export function Live({ onClose }: Props) {
             <img
               src={previewUrl}
               alt="Adeline Kalen"
-              className="h-full w-full object-cover opacity-80"
+              className="h-full w-full object-cover opacity-80 grayscale"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-secondary text-4xl font-semibold text-muted-foreground">
@@ -284,14 +284,14 @@ export function Live({ onClose }: Props) {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           {isLive ? (
-            <Badge variant="live" className="w-fit gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-              LIVE · {formatTimer(seconds)}
+            <Badge variant="outline" className="w-fit gap-1.5 border-neutral-600 text-white">
+              <span className="h-1.5 w-1.5 rounded-full bg-white" />
+              На линии · {formatTimer(seconds)}
             </Badge>
           ) : (
-            <Badge variant="secondary" className="w-fit gap-1.5">
+            <Badge variant="outline" className="w-fit gap-1.5 border-neutral-600 text-neutral-300">
               <Video className="h-3 w-3" />
-              Preview
+              Готова к звонку
             </Badge>
           )}
         </div>
@@ -317,7 +317,7 @@ export function Live({ onClose }: Props) {
             onClick={() => void startSession()}
           >
             <Video className="h-5 w-5" />
-            Start Live
+            Набрать Adeline Kalen
           </Button>
         ) : (
           <div className="flex items-center justify-center gap-4">

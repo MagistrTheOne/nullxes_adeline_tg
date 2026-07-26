@@ -11,6 +11,7 @@ from aiohttp import web
 from config import settings
 from services.llm import brain
 from services.tg_auth import is_user_allowed, user_id_from_init_data, validate_init_data
+from services.user_state import user_states
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,6 +39,10 @@ async def create_session_token(request: web.Request) -> web.Response:
     user_id, err = _auth_user(request)
     if err:
         return err
+
+    if user_id:
+        user_states.mark_miniapp_opened(int(user_id))
+        user_states.patch(int(user_id), preferred_channel="video")
 
     # Stateful Lab persona (CUSTOMER_CLIENT / LLM disabled). Greeting via our brain + talk().
     payload = {"personaConfig": {"personaId": settings.anam_persona_id}}
@@ -68,7 +73,7 @@ async def create_session_token(request: web.Request) -> web.Response:
                         "avatarId": settings.anam_avatar_id,
                         "userId": user_id,
                         "name": "Adeline Kalen",
-                        "role": "Head of the Interworld Department NULLXES",
+                        "role": "Adeline Kalen из NULLXES",
                     }
                 )
     except Exception as exc:
@@ -80,6 +85,8 @@ async def history_handler(request: web.Request) -> web.Response:
     user_id, err = _auth_user(request)
     if err:
         return err
+    if user_id:
+        user_states.mark_miniapp_opened(int(user_id))
     return web.json_response(
         {"messages": brain.public_history(int(user_id or 0))}
     )
@@ -128,18 +135,19 @@ async def persona_card(_: web.Request) -> web.Response:
     return web.json_response(
         {
             "name": "Adeline Kalen",
-            "role": "Head of the Interworld Department NULLXES",
-            "title": "Enterprise Executive",
+            "role": "Adeline Kalen из NULLXES",
+            "title": "Digital executive",
             "status": "Online · ready",
             "personaId": settings.anam_persona_id,
             "avatarId": settings.anam_avatar_id,
             "imageUrl": image_url,
             "blurb": (
-                "Ваш цифровой ассистент NULLXES. Пишите в чат, "
-                "звоните голосом или выходите в живой видео-разговор."
+                "Цифровая сотрудница NULLXES. Мы создаём цифровых сотрудников "
+                "для компаний и персональных цифровых друзей. "
+                "Пишите, звоните голосом или наберите по видео."
             ),
             "badges": {"avatar": "ready", "voice": "ready", "brain": "client"},
-            "preset": "Enterprise Closer",
+            "preset": "NULLXES",
         }
     )
 
