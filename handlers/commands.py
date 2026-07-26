@@ -87,6 +87,9 @@ async def cmd_memory(message: Message) -> None:
     await message.answer(
         "Память:\n"
         f"Режим: {view.get('experience_mode') or 'showcase'}\n"
+        f"Intent: {view.get('intent') or '—'} "
+        f"({view.get('intent_confidence') or 0})\n"
+        f"Темы: {', '.join((view.get('dialog_memory') or {}).get('topics_covered') or []) or '—'}\n"
         f"Кастом: {'открыт' if view.get('custom_unlocked') else 'закрыт'}\n"
         f"Роль: {role.get('title') or '—'}\n"
         f"Фаза: {view.get('phase')}\n"

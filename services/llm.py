@@ -16,6 +16,7 @@ from openai import AsyncOpenAI  # pyright: ignore[reportMissingImports]
 
 from config import settings
 from prompts.adelina import build_system_prompt, build_user_state_block
+from services.dialog_router import build_turn_context_block, route_turn
 from services.tools.registry import TOOL_DEFINITIONS, execute_tool
 from services.user_state import user_states
 
@@ -81,6 +82,16 @@ class AdelinaBrain:
     async def chat(self, user_id: int, user_text: str) -> str:
         self._ensure_loaded(user_id)
         user_states.touch_message(user_id)
+        # Intent → Confidence → Memory → FSM (soft), then LLM reaction
+        route = route_turn(user_id, user_text)
+        logger.info(
+            "router user=%s intent=%s conf=%.2f action=%s mode=%s",
+            user_id,
+            route.intent,
+            route.confidence,
+            route.action,
+            route.experience_mode,
+        )
         history = self._history[user_id]
         history.append({"role": "user", "content": user_text})
         if len(history) > MAX_HISTORY:
@@ -88,9 +99,11 @@ class AdelinaBrain:
 
         view = user_states.public_view(user_id)
         state_block = build_user_state_block(view)
+        turn_block = build_turn_context_block(route)
         messages: list[dict] = [
             {"role": "system", "content": build_system_prompt(view)},
             {"role": "system", "content": state_block},
+            {"role": "system", "content": turn_block},
             *history,
         ]
 
@@ -149,6 +162,7 @@ class AdelinaBrain:
                     "role": "system",
                     "content": build_user_state_block(view),
                 }
+                # keep turn_block at [2]
                 continue
 
             reply = (choice.content or "").strip()

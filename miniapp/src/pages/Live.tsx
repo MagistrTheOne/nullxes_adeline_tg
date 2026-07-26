@@ -75,6 +75,9 @@ export function Live({ onClose }: Props) {
   const userBuf = useRef("");
   /** Dedup for MESSAGE_HISTORY_UPDATED (custom LLM path). */
   const lastUserMsgIdRef = useRef<string>("");
+  const lastUserSpeechAtRef = useRef(0);
+  const lastUserSpeechTextRef = useRef("");
+  const greetingSpokenRef = useRef(false);
   const showCaptionsRef = useRef(true);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -218,16 +221,22 @@ export function Live({ onClose }: Props) {
     // Caption keeps NULLXES spelling; TTS gets phonetic rewrite.
     if (showCaptionsRef.current) setCaption(text);
     const spoken = forSpeech(text);
+    // Single TTS path only — never talk() + TalkMessageStream together (double audio).
+    let spokenOk = false;
     try {
       await client.talk(spoken);
+      spokenOk = true;
     } catch {
+      spokenOk = false;
+    }
+    if (!spokenOk) {
       try {
         const talkStream = client.createTalkMessageStream();
         if (talkStream.isActive()) {
           await talkStream.streamMessageChunk(spoken, true);
         }
       } catch {
-        /* ignore — UI already shows caption */
+        /* caption already shown */
       }
     }
     const audio = audioRef.current;
@@ -244,6 +253,17 @@ export function Live({ onClose }: Props) {
     if (busyRef.current || !clientRef.current) return;
     const trimmed = text.trim();
     if (!trimmed) return;
+
+    // Content+time dedup (Anam often emits the same user turn twice).
+    const now = Date.now();
+    if (
+      trimmed === lastUserSpeechTextRef.current &&
+      now - lastUserSpeechAtRef.current < 4000
+    ) {
+      return;
+    }
+    lastUserSpeechTextRef.current = trimmed;
+    lastUserSpeechAtRef.current = now;
 
     busyRef.current = true;
     setTurnSafe("thinking");
@@ -264,7 +284,10 @@ export function Live({ onClose }: Props) {
       setStatus(`Ошибка: ${msg}`);
       setTurnSafe(micMutedRef.current ? "muted" : "listening");
     } finally {
-      busyRef.current = false;
+      // Keep busy briefly so post-talk history echo doesn't re-fire the same user turn.
+      window.setTimeout(() => {
+        busyRef.current = false;
+      }, 600);
     }
   }
 
@@ -281,6 +304,9 @@ export function Live({ onClose }: Props) {
     setCaption("");
     userBuf.current = "";
     lastUserMsgIdRef.current = "";
+    lastUserSpeechTextRef.current = "";
+    lastUserSpeechAtRef.current = 0;
+    greetingSpokenRef.current = false;
 
     try {
       const unlock = audioRef.current;
@@ -297,12 +323,12 @@ export function Live({ onClose }: Props) {
 
       const client = createAnamClient(sessionToken);
       clientRef.current = client;
-      let greetingSpoken = false;
 
       const speakGreetingOnce = () => {
-        if (greetingSpoken || !session.speakGreeting || !session.greeting) return;
+        if (greetingSpokenRef.current || !session.speakGreeting || !session.greeting)
+          return;
         if (!clientRef.current) return;
-        greetingSpoken = true;
+        greetingSpokenRef.current = true;
         void (async () => {
           // Short natural beat before first greeting.
           await new Promise((r) => window.setTimeout(r, 900));
@@ -311,7 +337,9 @@ export function Live({ onClose }: Props) {
           try {
             await speakAsPersona(session.greeting!);
           } finally {
-            busyRef.current = false;
+            window.setTimeout(() => {
+              busyRef.current = false;
+            }, 600);
           }
         })();
       };
@@ -369,7 +397,7 @@ export function Live({ onClose }: Props) {
         if (micMutedRef.current || busyRef.current) return;
         setStatus("Обрабатываю речь…");
       });
-      // Doc path for CUSTOMER_CLIENT_V1: respond only when last turn is user.
+      // Single brain entrypoint: MESSAGE_HISTORY_UPDATED only (no stream endOfSpeech → chat).
       client.addListener(AnamEvent.MESSAGE_HISTORY_UPDATED, (messages) => {
         if (micMutedRef.current || busyRef.current) return;
         const list = Array.isArray(messages) ? messages : [];
@@ -379,9 +407,10 @@ export function Live({ onClose }: Props) {
         const id = String(last.id || "");
         const text = String(last.content || "").trim();
         if (!text) return;
-        if (id && id === lastUserMsgIdRef.current) return;
-        if (id) lastUserMsgIdRef.current = id;
-        else lastUserMsgIdRef.current = text;
+        const key = id || text;
+        if (key === lastUserMsgIdRef.current) return;
+        // Claim id synchronously so a second emit in the same tick is dropped.
+        lastUserMsgIdRef.current = key;
         void handleUserSpeech(text);
       });
       client.addListener(AnamEvent.CONNECTION_CLOSED, (reason, details) => {
@@ -402,12 +431,12 @@ export function Live({ onClose }: Props) {
         setPhaseSafe("error");
         setStatus("Session ended");
       });
+      // UI-only stream events — never call chat / talk from here (prevents ×2).
       client.addListener(AnamEvent.MESSAGE_STREAM_EVENT_RECEIVED, (event) => {
         const role = (event.role || "").toLowerCase();
         const chunk = event.content || "";
 
         if (role === "persona" || role === "assistant") {
-          // Caption already set to full reply in speakAsPersona — don't stream-append (duplicates).
           if (chunk) setTurnSafe("speaking");
           if (event.endOfSpeech && !busyRef.current) {
             setTurnSafe(micMutedRef.current ? "muted" : "listening");
@@ -417,7 +446,6 @@ export function Live({ onClose }: Props) {
         }
 
         if (role === "user") {
-          // Captions only — brain turns come from MESSAGE_HISTORY_UPDATED (Anam custom-LLM docs).
           if (!micMutedRef.current && !busyRef.current) {
             setTurnSafe("listening");
           }
