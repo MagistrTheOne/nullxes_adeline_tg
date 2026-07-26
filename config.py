@@ -81,3 +81,10 @@ def load_settings() -> Settings:
 
 
 settings = load_settings()
+
+
+def get_webapp_public_url() -> str:
+    """Runtime URL (tunnel may update it after boot)."""
+    from services.tunnel import get_public_url
+
+    return get_public_url(settings.webapp_public_url)

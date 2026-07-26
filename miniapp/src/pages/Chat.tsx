@@ -74,7 +74,7 @@ export function Chat({ onClose }: Props) {
         <Button type="button" variant="ghost" size="icon" className="h-10 w-10" onClick={onClose}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <Avatar src={avatarUrl} alt="Adeline Kalen" className="h-9 w-9 grayscale" />
+        <Avatar src={avatarUrl} alt="Adeline Kalen" className="h-9 w-9" />
         <div className="min-w-0">
           <p className="truncate font-semibold">Adeline Kalen из NULLXES</p>
           <p className="truncate text-xs text-muted-foreground">Чат</p>

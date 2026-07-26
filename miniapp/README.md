@@ -16,22 +16,15 @@ npm run build
 
 Без ngrok interstitial / Cloudflare 1033.
 
-Терминал 1 — бот:
+Один терминал — бот + туннель сами:
 
 ```powershell
 cd D:\NULLXES\NULLXES_HUB_BOT
-.\venv\Scripts\Activate.ps1
-python main.py
+.\scripts\start.ps1
 ```
 
-Терминал 2 — туннель:
-
-```powershell
-cd D:\NULLXES\NULLXES_HUB_BOT
-.\scripts\run_localhost_run.ps1
-```
-
-Скопируй `https://….lhr.life` в `.env` → `WEBAPP_PUBLIC_URL`, перезапусти бота, в Telegram: `/start` → Mini App.
+`START_TUNNEL=1` (по умолчанию): `python main.py` сам поднимает localhost.run и пишет `WEBAPP_PUBLIC_URL` в `.env`.  
+Подожди в логе `WEBAPP_PUBLIC_URL -> https://….lhr.life`, затем в Telegram: `/start` → Mini App.
 
 Текущий URL:
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Captions,
+  Loader2,
   Mic,
   MicOff,
   PhoneOff,
@@ -18,6 +19,8 @@ type Props = {
 };
 
 type Phase = "idle" | "connecting" | "live" | "error";
+
+const CONNECTING_STATUS = "Соединяю с Сотрудником NULLXES";
 
 function formatTimer(sec: number): string {
   const m = Math.floor(sec / 60)
@@ -36,7 +39,7 @@ export function Live({ onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const [phase, setPhase] = useState<Phase>("idle");
-  const [status, setStatus] = useState("Нажми Start, чтобы набрать Adeline Kalen");
+  const [status, setStatus] = useState("Нажми, чтобы набрать Adeline Kalen");
   const [caption, setCaption] = useState("");
   const [showCaptions, setShowCaptions] = useState(true);
   const [micMuted, setMicMuted] = useState(false);
@@ -95,7 +98,7 @@ export function Live({ onClose }: Props) {
     setSeconds(0);
     setCaption("");
     setMicMuted(false);
-    setStatus("Нажми Start, чтобы набрать Adeline Kalen");
+    setStatus("Нажми, чтобы набрать Adeline Kalen");
   }, []);
 
   async function handleUserSpeech(text: string) {
@@ -120,19 +123,19 @@ export function Live({ onClose }: Props) {
     startingRef.current = true;
     setError("");
     setPhase("connecting");
-    setStatus("Создаю session token…");
+    setStatus(CONNECTING_STATUS);
     setSeconds(0);
 
     try {
       const { sessionToken } = await createSessionToken();
       if (!sessionToken) throw new Error("empty session token");
 
-      setStatus("Разреши микрофон и подключаю Anam…");
+      setStatus(CONNECTING_STATUS);
       const client = createAnamClient(sessionToken);
       clientRef.current = client;
 
       client.addListener(AnamEvent.SESSION_READY, () => {
-        setStatus("Сессия готова, жду видео…");
+        setStatus(CONNECTING_STATUS);
       });
       client.addListener(AnamEvent.MIC_PERMISSION_PENDING, () => {
         setStatus("Нужен доступ к микрофону…");
@@ -143,7 +146,7 @@ export function Live({ onClose }: Props) {
         setStatus("Нет доступа к микрофону");
       });
       client.addListener(AnamEvent.VIDEO_STREAM_STARTED, () => {
-        setStatus("Видео-поток получен…");
+        setStatus(CONNECTING_STATUS);
         const video = videoRef.current;
         if (video) {
           video.muted = true;
@@ -152,10 +155,7 @@ export function Live({ onClose }: Props) {
       });
       client.addListener(AnamEvent.VIDEO_PLAY_STARTED, () => {
         const video = videoRef.current;
-        if (video) {
-          // Autoplay often needs muted start; unmute output after play.
-          video.muted = false;
-        }
+        if (video) video.muted = false;
         setPhase("live");
         setStatus("На линии · говори с Adeline");
       });
@@ -195,7 +195,6 @@ export function Live({ onClose }: Props) {
       }
 
       await client.streamToVideoElement("persona-video");
-      // Fallback if VIDEO_PLAY_STARTED is delayed/missed in WebView
       window.setTimeout(() => {
         if (clientRef.current && startingRef.current) {
           const v = videoRef.current;
@@ -242,7 +241,7 @@ export function Live({ onClose }: Props) {
   const showPreview = phase === "idle" || phase === "error" || phase === "connecting";
 
   return (
-    <div className="relative flex min-h-(--tg-viewport-stable-height,100vh) flex-col bg-background">
+    <div className="relative mx-auto flex h-[var(--tg-viewport-stable-height,100vh)] w-full max-w-md flex-col overflow-hidden bg-black">
       <video
         id="persona-video"
         ref={videoRef}
@@ -260,108 +259,121 @@ export function Live({ onClose }: Props) {
             <img
               src={previewUrl}
               alt="Adeline Kalen"
-              className="h-full w-full object-cover opacity-80 grayscale"
+              className="h-full w-full object-cover object-top"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-secondary text-4xl font-semibold text-muted-foreground">
               AK
             </div>
           )}
-          <div className="absolute inset-0 bg-linear-to-t from-background via-background/40 to-transparent" />
+          <div className="absolute inset-0 bg-linear-to-t from-black via-black/35 to-transparent" />
         </div>
       ) : null}
 
-      <div className="relative z-10 flex items-start justify-between p-4">
+      <div className="relative z-10 flex shrink-0 items-start justify-between p-3">
         <div className="flex flex-col gap-2">
           <Button
             type="button"
             variant="secondary"
             size="icon"
-            className="h-10 w-10"
+            className="h-10 w-10 border border-neutral-700 bg-black/50 backdrop-blur"
             onClick={() => void endCall()}
             aria-label="Back"
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
           {isLive ? (
-            <Badge variant="outline" className="w-fit gap-1.5 border-neutral-600 text-white">
-              <span className="h-1.5 w-1.5 rounded-full bg-white" />
+            <Badge variant="outline" className="w-fit gap-1.5 border-neutral-600 bg-black/50 text-white">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
               На линии · {formatTimer(seconds)}
             </Badge>
           ) : (
-            <Badge variant="outline" className="w-fit gap-1.5 border-neutral-600 text-neutral-300">
-              <Video className="h-3 w-3" />
+            <Badge variant="outline" className="w-fit gap-1.5 border-neutral-600 bg-black/50 text-neutral-200">
+              <Video className="h-3 w-3 text-gold" />
               Готова к звонку
             </Badge>
           )}
         </div>
       </div>
 
-      <div className="relative z-10 mt-auto space-y-3 p-4 pb-[calc(16px+env(safe-area-inset-bottom))]">
-        {showCaptions && caption ? (
-          <div className="rounded-xl border border-border bg-black/55 px-3 py-2 text-sm backdrop-blur">
+      <div className="relative z-10 mt-auto flex shrink-0 flex-col gap-3 p-4 pb-[calc(16px+env(safe-area-inset-bottom))]">
+        {showCaptions && caption && isLive ? (
+          <div className="rounded-xl border border-border bg-black/60 px-3 py-2 text-sm backdrop-blur">
             {caption}
           </div>
         ) : null}
 
-        <p className="text-center text-sm text-muted-foreground">{status}</p>
-        {error ? (
-          <p className="text-center text-sm text-destructive">{error}</p>
+        {phase === "connecting" ? (
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-neutral-800 bg-black/65 px-4 py-5 backdrop-blur">
+            <Loader2 className="h-9 w-9 animate-spin text-gold" />
+            <p className="nx-connecting-text text-center text-sm font-medium text-white">
+              {CONNECTING_STATUS}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-1 w-full rounded-full border-neutral-600"
+              onClick={() => void stopSession()}
+            >
+              Отмена
+            </Button>
+          </div>
         ) : null}
 
         {phase === "idle" || phase === "error" ? (
-          <Button
-            type="button"
-            size="lg"
-            className="w-full"
-            onClick={() => void startSession()}
-          >
-            <Video className="h-5 w-5" />
-            Набрать Adeline Kalen
-          </Button>
-        ) : (
-          <div className="flex items-center justify-center gap-4">
+          <>
+            <p className="text-center text-sm text-neutral-300">{status}</p>
+            {error ? (
+              <p className="text-center text-sm text-destructive">{error}</p>
+            ) : null}
             <Button
               type="button"
-              variant={micMuted ? "destructive" : "secondary"}
-              size="icon"
-              onClick={toggleMic}
-              disabled={!isLive}
-              aria-label="Mute mic"
+              size="lg"
+              className="h-12 w-full rounded-full bg-white text-black hover:bg-neutral-200"
+              onClick={() => void startSession()}
             >
-              {micMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              <Video className="h-5 w-5" />
+              Набрать Adeline Kalen
             </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              size="icon"
-              className="h-16 w-16"
-              onClick={() => void endCall()}
-              aria-label="End call"
-            >
-              <PhoneOff className="h-6 w-6" />
-            </Button>
-            <Button
-              type="button"
-              variant={showCaptions ? "default" : "secondary"}
-              size="icon"
-              onClick={() => setShowCaptions((v) => !v)}
-              aria-label="Captions"
-            >
-              <Captions className="h-5 w-5" />
-            </Button>
-          </div>
-        )}
+          </>
+        ) : null}
 
-        {phase === "connecting" ? (
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={() => void stopSession()}
-          >
-            Cancel
-          </Button>
+        {isLive ? (
+          <>
+            <p className="text-center text-sm text-neutral-300">{status}</p>
+            <div className="flex items-center justify-center gap-5">
+              <Button
+                type="button"
+                variant={micMuted ? "destructive" : "secondary"}
+                size="icon"
+                className="h-12 w-12 shrink-0 border border-neutral-700"
+                onClick={toggleMic}
+                aria-label="Mute mic"
+              >
+                {micMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="icon"
+                className="h-14 w-14 shrink-0"
+                onClick={() => void endCall()}
+                aria-label="End call"
+              >
+                <PhoneOff className="h-6 w-6" />
+              </Button>
+              <Button
+                type="button"
+                variant={showCaptions ? "default" : "secondary"}
+                size="icon"
+                className="h-12 w-12 shrink-0 border border-neutral-700"
+                onClick={() => setShowCaptions((v) => !v)}
+                aria-label="Captions"
+              >
+                <Captions className="h-5 w-5" />
+              </Button>
+            </div>
+          </>
         ) : null}
       </div>
     </div>

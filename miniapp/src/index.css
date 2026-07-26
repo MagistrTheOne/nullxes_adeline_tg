@@ -17,6 +17,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-gold: var(--gold);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -24,23 +25,25 @@
 }
 
 :root {
+  /* NULLXES dashboard: deep black + soft accent */
   --background: #000000;
   --foreground: #f5f5f5;
-  --card: #0a0a0a;
+  --card: #111111;
   --card-foreground: #f5f5f5;
   --primary: #ffffff;
   --primary-foreground: #000000;
-  --secondary: #141414;
+  --secondary: #161616;
   --secondary-foreground: #f5f5f5;
-  --muted: #141414;
-  --muted-foreground: #a3a3a3;
-  --accent: #1f1f1f;
+  --muted: #161616;
+  --muted-foreground: #9a9a9a;
+  --accent: #1c1c1c;
   --accent-foreground: #f5f5f5;
   --destructive: #b91c1c;
   --border: #2a2a2a;
   --input: #2a2a2a;
-  --ring: #ffffff;
-  --radius: 0.75rem;
+  --ring: #c4a574;
+  --gold: #c4a574;
+  --radius: 0.85rem;
   --tg-viewport-height: 100vh;
   font-family: "Segoe UI", "IBM Plex Sans", system-ui, sans-serif;
 }
@@ -54,6 +57,9 @@ html,
 body,
 #root {
   margin: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
   min-height: var(--tg-viewport-stable-height, var(--tg-viewport-height, 100vh));
   background: var(--background);
   color: var(--foreground);
@@ -61,4 +67,18 @@ body,
 
 body {
   background: #000000;
+}
+
+@keyframes nx-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.nx-connecting-text {
+  animation: nx-pulse 1.4s ease-in-out infinite;
 }

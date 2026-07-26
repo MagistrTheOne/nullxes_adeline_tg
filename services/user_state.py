@@ -192,24 +192,17 @@ class UserStateStore:
 user_states = UserStateStore()
 
 
-def greeting_for(user_id: int, display_name: str) -> tuple[str, bool]:
-    """Return (text, is_first_intro). Marks intro as shown when first."""
+def greeting_for(user_id: int, display_name: str) -> str:
+    """Short /start only — no long pitch. Full intro happens once in chat via LLM."""
     state = user_states.touch_start(user_id, display_name=display_name)
     name = display_name or "друг"
-    if not state.get("intro_shown"):
-        text = (
-            f"Привет, {name}! Я Adeline Kalen из NULLXES — цифровая сотрудница, "
-            f"Head of the Interworld Department.\n\n"
-            f"Мы в NULLXES создаём цифровых сотрудников и сотрудниц для компаний "
-            f"и персональных цифровых друзей.\n\n"
-            f"Могу помочь разобраться в продукте, собрать задачу или просто поговорить. "
-            f"С чего начнём? Команды: /help, /voice on|off."
+    if state.get("intro_shown") or int(state.get("start_count") or 0) > 1:
+        return (
+            f"Снова рада вас видеть, {name}. На связи — чем займёмся?\n"
+            f"/help · /voice on|off"
         )
-        user_states.mark_intro_done(user_id)
-        return text, True
-
-    text = (
-        f"Снова рада вас видеть, {name}. Я на связи — "
-        f"чем займёмся сегодня? /help · /voice on|off"
+    return (
+        f"Привет, {name}. Я Adeline Kalen из NULLXES.\n"
+        f"Напиши, чем помочь — или открой Mini App.\n"
+        f"/help · /voice on|off"
     )
-    return text, False

@@ -7,11 +7,12 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.exceptions import TelegramNetworkError
 
-from config import settings
+from config import get_webapp_public_url, settings
 from handlers import setup_routers
 from handlers.access import AccessMiddleware
 from routes.webapp import create_web_app
 from services.anam_bridge import anam_bridge
+from services.tunnel import start_localhost_run_tunnel, stop_tunnel, tunnel_enabled
 
 logging.basicConfig(
     level=logging.INFO,
@@ -59,12 +60,26 @@ async def main() -> None:
         "Mini App HTTP на http://%s:%s | WEBAPP_PUBLIC_URL=%s",
         settings.webapp_host,
         settings.webapp_port,
-        settings.webapp_public_url or "(пусто)",
+        get_webapp_public_url() or "(ждём туннель…)" if tunnel_enabled() else "(пусто)",
     )
+
+    tunnel_task: asyncio.Task | None = None
+    if tunnel_enabled():
+        tunnel_task = asyncio.create_task(
+            start_localhost_run_tunnel(settings.webapp_port),
+            name="localhost-run-tunnel",
+        )
 
     try:
         await run_polling_with_retry()
     finally:
+        if tunnel_task:
+            tunnel_task.cancel()
+            try:
+                await tunnel_task
+            except asyncio.CancelledError:
+                pass
+        await stop_tunnel()
         await anam_bridge.close_all()
         await runner.cleanup()
         await bot.session.close()

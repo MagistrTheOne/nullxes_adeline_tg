@@ -3,7 +3,7 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, WebAppInfo
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from config import settings
+from config import get_webapp_public_url, settings
 from services.anam_bridge import anam_bridge
 from services.user_state import greeting_for, user_states
 
@@ -14,20 +14,22 @@ router = Router(name="commands")
 async def cmd_start(message: Message) -> None:
     name = message.from_user.full_name if message.from_user else "друг"
     user_id = message.from_user.id if message.from_user else 0
-    text, _first = greeting_for(user_id, name)
+    text = greeting_for(user_id, name)
 
-    if settings.webapp_public_url:
+    public_url = get_webapp_public_url()
+    if public_url:
         builder = InlineKeyboardBuilder()
         builder.button(
             text="Открыть Adeline",
-            web_app=WebAppInfo(url=settings.webapp_public_url.rstrip("/") + "/"),
+            web_app=WebAppInfo(url=public_url.rstrip("/") + "/"),
         )
         await message.answer(text, reply_markup=builder.as_markup())
     else:
         await message.answer(
             text
-            + "\n\nMini App: задай WEBAPP_PUBLIC_URL (HTTPS tunnel) и перезапусти бота."
+            + "\n\nMini App: туннель ещё поднимается — подожди пару секунд и снова /start."
         )
+
 
 
 @router.message(Command("help"))
