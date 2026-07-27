@@ -104,12 +104,18 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
   };
 
   const displayName = card?.name || "Adeline Kalen";
+  const videoCtaHint =
+    mode === "enterprise"
+      ? "Приветствие и продажи под задачу компании"
+      : mode === "custom"
+        ? "В вашей кастомной роли"
+        : "Знакомство — без жёстких продаж";
 
   return (
     <div className="mx-auto flex w-full max-w-md min-h-(--tg-viewport-stable-height,100vh) flex-col gap-3 overflow-x-hidden bg-black p-3 pb-[calc(16px+env(safe-area-inset-bottom))]">
       <Card className="min-w-0 overflow-hidden border-neutral-800 bg-[#111] shadow-none">
         <div className="w-full bg-neutral-950">
-          <div className="relative w-full overflow-hidden aspect-3/4 max-h-[min(58vh,560px)]">
+          <div className="relative w-full overflow-hidden aspect-3/4 max-h-[min(52vh,520px)]">
             {card?.imageUrl ? (
               <img
                 src={card.imageUrl}
@@ -185,6 +191,21 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
         </button>
       </div>
 
+      {/* Primary CTA: Live video — greeting/sales decided by experience_mode */}
+      <Button
+        type="button"
+        size="lg"
+        disabled={Boolean(error)}
+        className="h-14 w-full shrink-0 rounded-full bg-white text-base font-semibold text-black hover:bg-neutral-200"
+        onClick={onLive}
+      >
+        <Video className="h-5 w-5" />
+        Набрать по видео
+      </Button>
+      <p className="-mt-1 text-center text-[11px] text-neutral-500">
+        {videoCtaHint}
+      </p>
+
       <div className="rounded-2xl border border-neutral-800 bg-[#111] p-3">
         <div className="text-sm font-semibold text-white">
           Свой цифровой сотрудник
@@ -244,33 +265,21 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
           <Mic className="mb-2 h-5 w-5 text-gold" />
           <div className="truncate text-sm font-semibold text-white">Голос</div>
           <div className="mt-0.5 text-xs leading-snug text-neutral-400">
-            Звонок в чате бота
+            В чате бота
           </div>
         </button>
         <button
           type="button"
-          onClick={onLive}
+          onClick={onChat}
           className="min-w-0 rounded-2xl border border-neutral-800 bg-[#111] p-3 text-left transition-colors hover:bg-neutral-900"
         >
-          <Video className="mb-2 h-5 w-5 text-gold" />
-          <div className="text-sm font-semibold leading-snug text-white">
-            Набрать по видео
-          </div>
-          <div className="mt-0.5 truncate text-xs text-neutral-400">
-            {displayName}
+          <MessageSquare className="mb-2 h-5 w-5 text-gold" />
+          <div className="truncate text-sm font-semibold text-white">Чат</div>
+          <div className="mt-0.5 text-xs leading-snug text-neutral-400">
+            Написать текстом
           </div>
         </button>
       </div>
-
-      <Button
-        type="button"
-        size="lg"
-        className="h-12 w-full shrink-0 rounded-full bg-white text-black hover:bg-neutral-200"
-        onClick={onChat}
-      >
-        <MessageSquare className="h-5 w-5" />
-        Написать Adeline
-      </Button>
 
       {hint ? (
         <p className="text-center text-xs text-neutral-500">{hint}</p>
