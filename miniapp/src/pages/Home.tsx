@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { Briefcase, MessageSquare, Mic, Sparkles, Video } from "lucide-react";
+import { MessageSquare, Mic, Video } from "lucide-react";
 import { mainButton } from "@tma.js/sdk-react";
 import {
   fetchPersona,
   setExperienceMode,
   type CustomRole,
-  type ExperienceMode,
   type PersonaCard,
 } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +21,6 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
   const [card, setCard] = useState<PersonaCard | null>(null);
   const [error, setError] = useState("");
   const [hint, setHint] = useState("");
-  const [mode, setMode] = useState<ExperienceMode>("showcase");
   const [customUnlocked, setCustomUnlocked] = useState(false);
   const [customRole, setCustomRole] = useState<CustomRole>({});
   const [saving, setSaving] = useState(false);
@@ -31,7 +29,6 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
     fetchPersona()
       .then((p) => {
         setCard(p);
-        if (p.experienceMode) setMode(p.experienceMode);
         setCustomUnlocked(Boolean(p.customUnlocked));
         setCustomRole(p.customRole || {});
       })
@@ -51,27 +48,6 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
     };
   }, []);
 
-  const pickMode = async (next: ExperienceMode) => {
-    setSaving(true);
-    setError("");
-    try {
-      const res = await setExperienceMode(next);
-      const m = res.experience.experience_mode || next;
-      setMode(m);
-      setCustomUnlocked(Boolean(res.experience.custom_unlocked));
-      setHint(
-        m === "enterprise"
-          ? "Режим для бизнеса. Продажи — только если вам это нужно."
-          : "Режим знакомства. Живой опыт цифрового сотрудника NULLXES.",
-      );
-      await reload();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const saveCustomRole = async () => {
     if (!customUnlocked) return;
     setSaving(true);
@@ -88,8 +64,7 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
         greeting: customRole.greeting || "",
         boundaries: customRole.boundaries || "",
       });
-      setMode("custom");
-      setHint("Кастомная роль сохранена.");
+      setHint("Кастомная роль сохранена — откроется в видео.");
       await reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -104,18 +79,12 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
   };
 
   const displayName = card?.name || "Adeline Kalen";
-  const videoCtaHint =
-    mode === "enterprise"
-      ? "Приветствие и продажи под задачу компании"
-      : mode === "custom"
-        ? "В вашей кастомной роли"
-        : "Знакомство — без жёстких продаж";
 
   return (
     <div className="mx-auto flex w-full max-w-md min-h-(--tg-viewport-stable-height,100vh) flex-col gap-3 overflow-x-hidden bg-black p-3 pb-[calc(16px+env(safe-area-inset-bottom))]">
       <Card className="min-w-0 overflow-hidden border-neutral-800 bg-[#111] shadow-none">
         <div className="w-full bg-neutral-950">
-          <div className="relative w-full overflow-hidden aspect-3/4 max-h-[min(52vh,520px)]">
+          <div className="relative w-full overflow-hidden aspect-3/4 max-h-[min(56vh,560px)]">
             {card?.imageUrl ? (
               <img
                 src={card.imageUrl}
@@ -145,53 +114,15 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
           >
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
             {card?.status || "Online · ready"}
-            <span className="text-neutral-500">·</span>
-            <span className="text-neutral-300">{mode}</span>
           </Badge>
           <p className="text-sm leading-relaxed text-neutral-400">
-            {card?.blurb ||
-              "Опыт цифрового сотрудника нового поколения NULLXES."}
+            Наберите по видео — Аделина сама поймёт, это знакомство или разговор
+            про бизнес, и подстроится.
           </p>
           {error ? <p className="text-sm text-red-400">{error}</p> : null}
         </CardContent>
       </Card>
 
-      <div className="grid min-w-0 grid-cols-2 gap-2">
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => void pickMode("showcase")}
-          className={`min-w-0 rounded-2xl border p-3 text-left transition-colors ${
-            mode === "showcase"
-              ? "border-gold/50 bg-neutral-900"
-              : "border-neutral-800 bg-[#111] hover:bg-neutral-900"
-          }`}
-        >
-          <Sparkles className="mb-2 h-5 w-5 text-gold" />
-          <div className="text-sm font-semibold text-white">Познакомиться</div>
-          <div className="mt-0.5 text-xs leading-snug text-neutral-400">
-            Живой опыт, без продаж
-          </div>
-        </button>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={() => void pickMode("enterprise")}
-          className={`min-w-0 rounded-2xl border p-3 text-left transition-colors ${
-            mode === "enterprise"
-              ? "border-gold/50 bg-neutral-900"
-              : "border-neutral-800 bg-[#111] hover:bg-neutral-900"
-          }`}
-        >
-          <Briefcase className="mb-2 h-5 w-5 text-gold" />
-          <div className="text-sm font-semibold text-white">Для бизнеса</div>
-          <div className="mt-0.5 text-xs leading-snug text-neutral-400">
-            Пилот и сценарии по запросу
-          </div>
-        </button>
-      </div>
-
-      {/* Primary CTA: Live video — greeting/sales decided by experience_mode */}
       <Button
         type="button"
         size="lg"
@@ -202,19 +133,16 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
         <Video className="h-5 w-5" />
         Набрать по видео
       </Button>
-      <p className="-mt-1 text-center text-[11px] text-neutral-500">
-        {videoCtaHint}
-      </p>
 
-      <div className="rounded-2xl border border-neutral-800 bg-[#111] p-3">
-        <div className="text-sm font-semibold text-white">
-          Свой цифровой сотрудник
-        </div>
-        {customUnlocked ? (
+      {customUnlocked ? (
+        <div className="rounded-2xl border border-neutral-800 bg-[#111] p-3">
+          <div className="text-sm font-semibold text-white">
+            Свой цифровой сотрудник
+          </div>
           <div className="mt-2 space-y-2">
             <input
               className="w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-sm text-white outline-none"
-              placeholder="Роль (например: персональный ассистент)"
+              placeholder="Роль"
               value={customRole.title || ""}
               onChange={(e) =>
                 setCustomRole((r) => ({ ...r, title: e.target.value }))
@@ -222,21 +150,10 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
             />
             <input
               className="w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-sm text-white outline-none"
-              placeholder="Тон (спокойный, деловой…)"
+              placeholder="Тон"
               value={customRole.tone || ""}
               onChange={(e) =>
                 setCustomRole((r) => ({ ...r, tone: e.target.value }))
-              }
-            />
-            <input
-              className="w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-sm text-white outline-none"
-              placeholder="Одна цель роли"
-              value={(customRole.goals && customRole.goals[0]) || ""}
-              onChange={(e) =>
-                setCustomRole((r) => ({
-                  ...r,
-                  goals: e.target.value ? [e.target.value] : [],
-                }))
               }
             />
             <Button
@@ -248,13 +165,8 @@ export function Home({ onLive, onChat, onVoiceHint }: Props) {
               Сохранить роль
             </Button>
           </div>
-        ) : (
-          <p className="mt-1.5 text-xs leading-relaxed text-neutral-400">
-            Кастомизация роли — платный слой. Напишите основателю{" "}
-            <span className="text-gold">@MagistrTheOne</span> для разблокировки.
-          </p>
-        )}
-      </div>
+        </div>
+      ) : null}
 
       <div className="grid min-w-0 grid-cols-2 gap-2">
         <button

@@ -151,17 +151,18 @@ async def create_session_token(request: web.Request) -> web.Response:
                         if user_id
                         else {"experience_mode": "showcase", "intro_shown": False}
                     )
+                    # Avatar Live: no UI mode buttons — soft showcase greeting first;
+                    # dialog_router soft-switches to enterprise when user shows business intent.
+                    live_view = dict(view)
+                    if normalize_mode(live_view) != "custom":
+                        live_view["experience_mode"] = "showcase"
                     greeting = greeting_for_mode(
-                        view, returning=bool(intro_shown)
+                        live_view, returning=bool(intro_shown)
                     )
                     if user_id and not intro_shown:
                         user_states.mark_intro_done(int(user_id))
                     mode = normalize_mode(view)
-                    role_label = (
-                        "Enterprise · NULLXES"
-                        if mode == "enterprise"
-                        else "Цифровой сотрудник · NULLXES"
-                    )
+                    role_label = "Цифровой сотрудник · NULLXES"
                     return web.json_response(
                         {
                             "sessionToken": body.get("sessionToken")
